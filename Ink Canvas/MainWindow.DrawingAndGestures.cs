@@ -1,5 +1,7 @@
 using AutoUpdaterDotNET;
 using InkCanvasPlus.Helpers;
+using InkCanvasPlus.History;
+using InkCanvasPlus.Input;
 using iNKORE.UI.WPF.Modern;
 using iNKORE.UI.WPF.Modern.Helpers;
 using IWshRuntimeLibrary;
@@ -48,18 +50,26 @@ namespace InkCanvasPlus
         {
             try
             {
-                InkWidthSlider.Value -= 1;
+                BorderSettings.InkWidthSlider.Value -= 1;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("BtnPenWidthDecrease", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
         }
 
         private void BtnPenWidthIncrease_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                InkWidthSlider.Value += 1;
+                BorderSettings.InkWidthSlider.Value += 1;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("BtnPenWidthIncrease", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
         }
 
 
@@ -85,7 +95,8 @@ namespace InkCanvasPlus
                 inkCanvas.Select(new StrokeCollection());
             }
             var item = timeMachine.Undo();
-            ApplyHistoryToCanvas(item);
+            if (item == null) return;
+            _inkHistory.Apply(item);
         }
         private void BtnRedo_Click(object sender, RoutedEventArgs e)
         {
@@ -95,7 +106,8 @@ namespace InkCanvasPlus
                 inkCanvas.Select(new StrokeCollection());
             }
             var item = timeMachine.Redo();
-            ApplyHistoryToCanvas(item);
+            if (item == null) return;
+            _inkHistory.Apply(item);
         }
         private void Btn_IsEnabledChanged(object sender, DependencyPropertyChangedEventArgs e)
         {
@@ -111,7 +123,11 @@ namespace InkCanvasPlus
                     ((UIElement)((Button)sender).Content).Opacity = 0.25;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("Btn_IsEnabledChanged", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
         }
         #endregion Other Controls
 
@@ -471,15 +487,11 @@ namespace InkCanvasPlus
 
         private void BtnSelect_Click(object sender, RoutedEventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 0;
-            inkCanvas.IsManipulationEnabled = false;
             if (inkCanvas.EditingMode == InkCanvasEditingMode.Select)
             {
                 if (inkCanvas.GetSelectedStrokes().Count == inkCanvas.Strokes.Count)
                 {
-                    inkCanvas.EditingMode = InkCanvasEditingMode.Ink;
-                    inkCanvas.IsManipulationEnabled = true;
+                    ApplyInkOrMarkerTool();
                 }
                 else
                 {
@@ -498,8 +510,7 @@ namespace InkCanvasPlus
             }
             else
             {
-                inkCanvas.EditingMode = InkCanvasEditingMode.Select;
-
+                ApplyTool(InkTool.Lasso);
             }
         }
 
@@ -603,12 +614,19 @@ namespace InkCanvasPlus
                             stroke.DrawingAttributes.Width *= md.Scale.X;
                             stroke.DrawingAttributes.Height *= md.Scale.Y;
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            LogHelper.WriteLogToFile("StrokeScaleWidth: " + ex.Message, LogHelper.LogType.Trace);
+                        }
                     }
                     updateBorderStrokeSelectionControlLocation();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("TwoFingerSelectionTransform", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
         }
 
         private void GridInkCanvasSelectionCover_TouchDown(object sender, TouchEventArgs e)
@@ -728,28 +746,15 @@ namespace InkCanvasPlus
                 var dA = new DoubleAnimation(1, 0.3, new Duration(TimeSpan.FromMilliseconds(100)));
                 ((UIElement)sender).BeginAnimation(OpacityProperty, dA);
 
-                forceEraser = true;
-                inkCanvas.EditingMode = InkCanvasEditingMode.None;
-                inkCanvas.IsManipulationEnabled = true;
-                if (sender == ImageDrawLine)
+                int mode = 0;
+                if (sender == ImageDrawLine) mode = 1;
+                else if (sender == ImageDrawDashedLine) mode = 8;
+                else if (sender == ImageDrawDotLine) mode = 18;
+                else if (sender == ImageDrawArrow) mode = 2;
+                else if (sender == ImageDrawParallelLine) mode = 15;
+                if (mode != 0)
                 {
-                    drawingShapeMode = 1;
-                }
-                else if (sender == ImageDrawDashedLine)
-                {
-                    drawingShapeMode = 8;
-                }
-                else if (sender == ImageDrawDotLine)
-                {
-                    drawingShapeMode = 18;
-                }
-                else if (sender == ImageDrawArrow)
-                {
-                    drawingShapeMode = 2;
-                }
-                else if (sender == ImageDrawParallelLine)
-                {
-                    drawingShapeMode = 15;
+                    ApplyTool(InkTool.Shape, mode);
                 }
                 isLongPressSelected = true;
                 if (isSingleFingerDragMode)
@@ -761,10 +766,7 @@ namespace InkCanvasPlus
 
         private void BtnPen_Click(object sender, RoutedEventArgs e)
         {
-            forceEraser = false;
-            drawingShapeMode = 0;
-            inkCanvas.EditingMode = InkCanvasEditingMode.Ink;
-            inkCanvas.IsManipulationEnabled = true;
+            ApplyInkOrMarkerTool();
             CancelSingleFingerDragMode();
             isLongPressSelected = false;
         }
@@ -773,11 +775,7 @@ namespace InkCanvasPlus
         {
             if (lastMouseDownSender == sender)
             {
-                forceEraser = true;
-                drawingShapeMode = 1;
-                inkCanvas.EditingMode = InkCanvasEditingMode.None;
-                inkCanvas.IsManipulationEnabled = true;
-                CancelSingleFingerDragMode();
+                SelectShapeTool(1);
             }
             lastMouseDownSender = null;
             if (isLongPressSelected)
@@ -795,11 +793,7 @@ namespace InkCanvasPlus
         {
             if (lastMouseDownSender == sender)
             {
-                forceEraser = true;
-                drawingShapeMode = 8;
-                inkCanvas.EditingMode = InkCanvasEditingMode.None;
-                inkCanvas.IsManipulationEnabled = true;
-                CancelSingleFingerDragMode();
+                SelectShapeTool(8);
             }
             lastMouseDownSender = null;
             if (isLongPressSelected)
@@ -817,11 +811,7 @@ namespace InkCanvasPlus
         {
             if (lastMouseDownSender == sender)
             {
-                forceEraser = true;
-                drawingShapeMode = 18;
-                inkCanvas.EditingMode = InkCanvasEditingMode.None;
-                inkCanvas.IsManipulationEnabled = true;
-                CancelSingleFingerDragMode();
+                SelectShapeTool(18);
             }
             lastMouseDownSender = null;
             if (isLongPressSelected)
@@ -839,11 +829,7 @@ namespace InkCanvasPlus
         {
             if (lastMouseDownSender == sender)
             {
-                forceEraser = true;
-                drawingShapeMode = 2;
-                inkCanvas.EditingMode = InkCanvasEditingMode.None;
-                inkCanvas.IsManipulationEnabled = true;
-                CancelSingleFingerDragMode();
+                SelectShapeTool(2);
             }
             lastMouseDownSender = null;
             if (isLongPressSelected)
@@ -861,11 +847,7 @@ namespace InkCanvasPlus
         {
             if (lastMouseDownSender == sender)
             {
-                forceEraser = true;
-                drawingShapeMode = 15;
-                inkCanvas.EditingMode = InkCanvasEditingMode.None;
-                inkCanvas.IsManipulationEnabled = true;
-                CancelSingleFingerDragMode();
+                SelectShapeTool(15);
             }
             lastMouseDownSender = null;
             if (isLongPressSelected)
@@ -881,187 +863,107 @@ namespace InkCanvasPlus
 
         private void BtnDrawCoordinate1_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 11;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(11);
         }
 
         private void BtnDrawCoordinate2_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 12;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(12);
         }
 
         private void BtnDrawCoordinate3_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 13;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(13);
         }
 
         private void BtnDrawCoordinate4_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 14;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(14);
         }
 
         private void BtnDrawCoordinate5_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 17;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(17);
         }
 
         private void BtnDrawRectangle_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 3;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(3);
         }
 
         private void BtnDrawRectangleCenter_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 19;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(19);
         }
 
         private void BtnDrawEllipse_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 4;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(4);
         }
 
         private void BtnDrawCircle_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 5;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(5);
         }
 
         private void BtnDrawCenterEllipse_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 16;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(16);
         }
 
         private void BtnDrawCenterEllipseWithFocalPoint_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 23;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(23);
         }
 
         private void BtnDrawDashedCircle_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 10;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(10);
         }
 
         private void BtnDrawHyperbola_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 24;
             drawMultiStepShapeCurrentStep = 0;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(24);
         }
 
         private void BtnDrawHyperbolaWithFocalPoint_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 25;
             drawMultiStepShapeCurrentStep = 0;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(25);
         }
 
         private void BtnDrawParabola1_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 20;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(20);
         }
 
         private void BtnDrawParabolaWithFocalPoint_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 22;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(22);
         }
 
         private void BtnDrawParabola2_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 21;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(21);
         }
 
         private void BtnDrawCylinder_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 6;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(6);
         }
 
         private void BtnDrawCone_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 7;
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(7);
         }
 
         private void BtnDrawCuboid_Click(object sender, EventArgs e)
         {
-            forceEraser = true;
-            drawingShapeMode = 9;
             isFirstTouchCuboid = true;
             CuboidFrontRectIniP = new Point();
             CuboidFrontRectEndP = new Point();
-            inkCanvas.EditingMode = InkCanvasEditingMode.None;
-            inkCanvas.IsManipulationEnabled = true;
-            CancelSingleFingerDragMode();
+            SelectShapeTool(9);
         }
 
         #endregion
@@ -1086,12 +988,16 @@ namespace InkCanvasPlus
                         inkCanvas.Strokes.Remove(lastTempStroke);
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     return;
                 }
                 if (inkCanvas.EditingMode != InkCanvasEditingMode.None)
                 {
-                    inkCanvas.EditingMode = InkCanvasEditingMode.None;
+                    // Rubber-band preview — not a user tool switch.
+                    SuppressInkForShapePreview();
                 }
             }
             MouseTouchMove(e.GetTouchPoint(inkCanvas).Position);
@@ -1127,7 +1033,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStroke);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStroke = stroke;
                     inkCanvas.Strokes.Add(stroke);
                     break;
@@ -1138,7 +1047,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1149,7 +1061,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1177,7 +1092,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStroke);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStroke = stroke;
                     inkCanvas.Strokes.Add(stroke);
                     break;
@@ -1230,7 +1148,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1242,7 +1163,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1255,7 +1179,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1268,7 +1195,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1281,7 +1211,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1295,7 +1228,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1317,7 +1253,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStroke);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStroke = stroke;
                     inkCanvas.Strokes.Add(stroke);
                     break;
@@ -1341,7 +1280,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStroke);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStroke = stroke;
                     inkCanvas.Strokes.Add(stroke);
                     break;
@@ -1357,7 +1299,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStroke);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStroke = stroke;
                     inkCanvas.Strokes.Add(stroke);
                     break;
@@ -1374,7 +1319,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStroke);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStroke = stroke;
                     inkCanvas.Strokes.Add(stroke);
                     break;
@@ -1392,7 +1340,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStroke);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStroke = stroke;
                     inkCanvas.Strokes.Add(stroke);
                     break;
@@ -1451,7 +1402,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1463,7 +1417,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1547,8 +1504,9 @@ namespace InkCanvasPlus
                                 strokes.Add(stroke.Clone());
                             }
                         }
-                        catch
+                        catch (Exception ex)
                         {
+                            LogHelper.WriteLogToFile("HyperbolaPreview: " + ex.Message, LogHelper.LogType.Trace);
                             return;
                         }
                     }
@@ -1556,7 +1514,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1588,7 +1549,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1620,7 +1584,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1661,7 +1628,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1718,7 +1688,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1766,7 +1739,10 @@ namespace InkCanvasPlus
                     {
                         inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                    }
                     lastTempStrokeCollection = strokes;
                     inkCanvas.Strokes.Add(strokes);
                     break;
@@ -1783,7 +1759,10 @@ namespace InkCanvasPlus
                         {
                             inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                        }
                         lastTempStrokeCollection = strokes;
                         inkCanvas.Strokes.Add(strokes);
                         CuboidFrontRectIniP = iniP;
@@ -1848,7 +1827,10 @@ namespace InkCanvasPlus
                         {
                             inkCanvas.Strokes.Remove(lastTempStrokeCollection);
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            LogHelper.WriteLogToFile("RemoveTempStroke: " + ex.Message, LogHelper.LogType.Trace);
+                        }
                         lastTempStrokeCollection = strokes;
                         inkCanvas.Strokes.Add(strokes);
                     }
@@ -2139,12 +2121,7 @@ namespace InkCanvasPlus
                 }
             }
             isMouseDown = false;
-            if (ReplacedStroke != null || AddedStroke != null)
-            {
-                timeMachine.CommitStrokeEraseHistory(ReplacedStroke, AddedStroke);
-                AddedStroke = null;
-                ReplacedStroke = null;
-            }
+            _inkHistory.NotifyPointerUp();
             if (_currentCommitType == CommitReason.ShapeDrawing && drawingShapeMode != 9)
             {
                 _currentCommitType = CommitReason.UserInput;

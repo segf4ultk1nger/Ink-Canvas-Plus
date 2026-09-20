@@ -50,13 +50,21 @@ namespace InkCanvasPlus.Helpers
                         for (int i = 0; i < 4; i++)
                         {
                             try { colors[i] = ArgbStringToColor(lines[i]); }
-                            catch { colors[i] = defaults[i]; }
+                            catch (Exception ex)
+                            {
+                                LogHelper.WriteLogToFile("LoadColorsParse: " + ex.Message, LogHelper.LogType.Trace);
+                                colors[i] = defaults[i];
+                            }
                         }
                         return colors;
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("LoadColors", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
 
             return (Color[])defaults.Clone();
         }

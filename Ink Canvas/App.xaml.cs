@@ -1,4 +1,5 @@
 ﻿using InkCanvasPlus.Helpers;
+using InkCanvasPlus.Services;
 using iNKORE.UI.WPF.Modern.Controls;
 using System;
 using System.Linq;
@@ -31,7 +32,8 @@ namespace InkCanvasPlus
         private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
         {
             InkCanvasPlus.MainWindow.ShowNewMessage("抱歉，出现未预期的异常，可能导致 Ink Canvas 画板运行不稳定。\n建议保存墨迹后重启应用。", true);
-            LogHelper.NewLog(e.Exception.ToString());
+            LogHelper.NewLog(e.Exception);
+            SettingsStore.FlushCurrentIfAny();
             e.Handled = true;
         }
 
@@ -72,11 +74,12 @@ namespace InkCanvasPlus
                             return string.Equals(p.MainModule.FileName, current.MainModule.FileName, StringComparison.InvariantCultureIgnoreCase);
 
                         }
-                        catch
-                        {
-                            // Access denied to process info, maybe it's a system process or we don't have permissions. Just skip it.
-                            return false;
-                        }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("Process.MainModule: " + ex.Message, LogHelper.LogType.Trace);
+                        // Access denied to process info, maybe it's a system process or we don't have permissions. Just skip it.
+                        return false;
+                    }
                     }).ToList();
                     foreach (var p in others)
                     {
@@ -138,12 +141,16 @@ namespace InkCanvasPlus
                         SenderScrollViewer.ScrollToVerticalOffset(SenderScrollViewer.VerticalOffset - e.Delta * 10 * System.Windows.Forms.SystemInformation.MouseWheelScrollLines / (double)120);
                         e.Handled = true;
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        LogHelper.WriteLogToFile("ScrollViewer_PreviewMouseWheel", LogHelper.LogType.Error);
+                        LogHelper.NewLog(ex);
                     }
             }
-            catch
+            catch (Exception ex)
             {
+                LogHelper.WriteLogToFile("ScrollViewer_PreviewMouseWheel", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
             }
         }
     }

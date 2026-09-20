@@ -1,5 +1,9 @@
 using AutoUpdaterDotNET;
+using InkCanvasPlus.Domain;
 using InkCanvasPlus.Helpers;
+using InkCanvasPlus.History;
+using InkCanvasPlus.Input;
+using InkCanvasPlus.Services;
 using iNKORE.UI.WPF.Modern;
 using iNKORE.UI.WPF.Modern.Helpers;
 using IWshRuntimeLibrary;
@@ -44,28 +48,23 @@ namespace InkCanvasPlus
 
         #region Whiteboard Controls
 
-        StrokeCollection[] strokeCollections = new StrokeCollection[101];
-        bool[] whiteboadLastModeIsRedo = new bool[101];
         StrokeCollection lastTouchDownStrokeCollection = new StrokeCollection();
 
-        int CurrentWhiteboardIndex = 1;
-        int WhiteboardTotalCount = 1;
-        TimeMachineHistory[][] TimeMachineHistories = new TimeMachineHistory[101][]; //最多99页，0用来存储非白板时的墨迹以便还原
+        readonly InkDocument _whiteboardDocument = new InkDocument();
+        readonly InkPage DesktopPage = new InkPage();
+
+        int CurrentWhiteboardIndex => _whiteboardDocument.CurrentIndex + 1;
+        int WhiteboardTotalCount => _whiteboardDocument.PageCount;
 
         private void SaveStrokes(bool isBackupMain = false)
         {
             if (isBackupMain)
             {
-                var timeMachineHistory = timeMachine.ExportTimeMachineHistory();
-                TimeMachineHistories[0] = timeMachineHistory;
-                timeMachine.ClearStrokeHistory();
-
+                DesktopPage.SnapshotHistory(_inkHistory);
             }
             else
             {
-                var timeMachineHistory = timeMachine.ExportTimeMachineHistory();
-                TimeMachineHistories[CurrentWhiteboardIndex] = timeMachineHistory;
-                timeMachine.ClearStrokeHistory();
+                _whiteboardDocument.SaveCurrent(inkCanvas.Strokes, _inkHistory);
             }
         }
 
@@ -82,114 +81,81 @@ namespace InkCanvasPlus
         {
             try
             {
-                if (TimeMachineHistories[CurrentWhiteboardIndex] == null) return; //防止白板打开后不居中
+                // Desktop backup is a separate InkPage. Do not gate restore on the current
+                // whiteboard page being non-null (that used to skip restoring desktop ink).
                 if (isBackupMain)
                 {
-                    timeMachine.ImportTimeMachineHistory(TimeMachineHistories[0]);
-                    foreach (var item in TimeMachineHistories[0])
-                    {
-                        ApplyHistoryToCanvas(item);
-                    }
+                    DesktopPage.RestoreHistory(_inkHistory);
                 }
                 else
                 {
-                    timeMachine.ImportTimeMachineHistory(TimeMachineHistories[CurrentWhiteboardIndex]);
-                    foreach (var item in TimeMachineHistories[CurrentWhiteboardIndex])
-                    {
-                        ApplyHistoryToCanvas(item);
-                    }
+                    _whiteboardDocument.RestoreCurrent(inkCanvas.Strokes, _inkHistory);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("RestoreStrokes", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
+        }
+
+        private void MaybeAutoSaveStrokesOnWhiteboardPageChange()
+        {
+            if (Settings.Automation.IsAutoSaveStrokesAtClear && inkCanvas.Strokes.Count > Settings.Automation.MinimumAutomationStrokeNumber)
+            {
+                SaveScreenShot(true);
+                if (Settings.Automation.IsAutoSaveStrokesAtScreenshot) SaveInkCanvasStrokes(false);
+            }
         }
 
         private void BtnWhiteBoardSwitchPrevious_Click(object sender, EventArgs e)
         {
-            if (CurrentWhiteboardIndex <= 1) return;
+            if (_whiteboardDocument.CurrentIndex <= 0) return;
 
-            SaveStrokes();
-
-            ClearStrokes(true);
-            CurrentWhiteboardIndex--;
-
-            RestoreStrokes();
+            _whiteboardDocument.GoTo(_whiteboardDocument.CurrentIndex - 1, inkCanvas.Strokes, _inkHistory);
 
             UpdateIndexInfoDisplay();
         }
 
         private void BtnWhiteBoardSwitchNext_Click(object sender, EventArgs e)
         {
-            if (CurrentWhiteboardIndex >= WhiteboardTotalCount)
+            if (_whiteboardDocument.CurrentIndex >= _whiteboardDocument.PageCount - 1)
             {
                 BtnWhiteBoardAdd_Click(sender, e);
                 return;
             }
-            if (Settings.Automation.IsAutoSaveStrokesAtClear && inkCanvas.Strokes.Count > Settings.Automation.MinimumAutomationStrokeNumber)
-            {
-                SaveScreenShot(true);
-                if (Settings.Automation.IsAutoSaveStrokesAtScreenshot) SaveInkCanvasStrokes(false);
-            }
-            SaveStrokes();
-
-
-            ClearStrokes(true);
-            CurrentWhiteboardIndex++;
-
-            RestoreStrokes();
+            int target = _whiteboardDocument.CurrentIndex + 1;
+            _whiteboardDocument.GoTo(target, inkCanvas.Strokes, _inkHistory, afterSave: MaybeAutoSaveStrokesOnWhiteboardPageChange);
 
             UpdateIndexInfoDisplay();
         }
 
         private void BtnWhiteBoardAdd_Click(object sender, EventArgs e)
         {
-            if (WhiteboardTotalCount >= 99) return;
-            if (Settings.Automation.IsAutoSaveStrokesAtClear && inkCanvas.Strokes.Count > Settings.Automation.MinimumAutomationStrokeNumber)
-            {
-                SaveScreenShot(true);
-                if (Settings.Automation.IsAutoSaveStrokesAtScreenshot) SaveInkCanvasStrokes(false);
-            }
-            SaveStrokes();
+            if (_whiteboardDocument.PageCount >= InkDocument.MaxPages) return;
+            _whiteboardDocument.SaveCurrent(inkCanvas.Strokes, _inkHistory);
+            MaybeAutoSaveStrokesOnWhiteboardPageChange();
             ClearStrokes(true);
 
-            WhiteboardTotalCount++;
-            CurrentWhiteboardIndex++;
-
-            if (CurrentWhiteboardIndex != WhiteboardTotalCount)
-            {
-                for (int i = WhiteboardTotalCount; i > CurrentWhiteboardIndex; i--)
-                {
-                    TimeMachineHistories[i] = TimeMachineHistories[i - 1];
-                }
-            }
+            _whiteboardDocument.AddAfterCurrent();
 
             UpdateIndexInfoDisplay();
 
-            if (WhiteboardTotalCount >= 99) BtnWhiteBoardAdd.IsEnabled = false;
+            if (_whiteboardDocument.PageCount >= InkDocument.MaxPages) BtnWhiteBoardAdd.IsEnabled = false;
         }
 
         private void BtnWhiteBoardDelete_Click(object sender, RoutedEventArgs e)
         {
+            if (_whiteboardDocument.PageCount <= 1) return;
             ClearStrokes(true);
 
-            if (CurrentWhiteboardIndex != WhiteboardTotalCount)
-            {
-                for (int i = CurrentWhiteboardIndex; i <= WhiteboardTotalCount; i++)
-                {
-                    TimeMachineHistories[i] = TimeMachineHistories[i + 1];
-                }
-            }
-            else
-            {
-                CurrentWhiteboardIndex--;
-            }
-
-            WhiteboardTotalCount--;
+            _whiteboardDocument.RemoveCurrent();
 
             RestoreStrokes();
 
             UpdateIndexInfoDisplay();
 
-            if (WhiteboardTotalCount < 99) BtnWhiteBoardAdd.IsEnabled = true;
+            if (_whiteboardDocument.PageCount < InkDocument.MaxPages) BtnWhiteBoardAdd.IsEnabled = true;
         }
 
         private void UpdateIndexInfoDisplay()
@@ -228,7 +194,7 @@ namespace InkCanvasPlus
         {
             try
             {
-                bool useLightTheme = currentMode != 0 && !Settings.Canvas.UsingWhiteboard;
+                bool useLightTheme = Surface == AppSurface.Whiteboard && !Settings.Canvas.UsingWhiteboard;
                 Color[] colors = useLightTheme
                     ? ColorConfigHelper.LoadColors(ColorConfigHelper.LightColorFile, ColorConfigHelper.DefaultLightColors)
                     : ColorConfigHelper.LoadColors(ColorConfigHelper.DarkColorFile, ColorConfigHelper.DefaultDarkColors);
@@ -237,7 +203,12 @@ namespace InkCanvasPlus
                 BtnColorBlue.Background = new SolidColorBrush(colors[2]);
                 BtnColorYellow.Background = new SolidColorBrush(colors[3]);
             }
-            catch (Exception) { ShowNotification("读取画笔颜色配置文件时遇到问题"); }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("SetColors", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+                ShowNotification("读取画笔颜色配置文件时遇到问题");
+            }
         }
 
         #endregion Whiteboard Controls
@@ -697,7 +668,11 @@ namespace InkCanvasPlus
                         RandWindow.randSeed = (int)(_speed * 100000 * 1000);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    LogHelper.WriteLogToFile("StrokeSpeedRandSeed", LogHelper.LogType.Error);
+                    LogHelper.NewLog(ex);
+                }
 
                 switch (Settings.Canvas.InkStyle)
                 {
@@ -733,9 +708,10 @@ namespace InkCanvasPlus
                             //Label.Content = s;
                             e.Stroke.StylusPoints = stylusPoints;
                         }
-                        catch
+                        catch (Exception ex)
                         {
-
+                            LogHelper.WriteLogToFile("SimulatePenPressure", LogHelper.LogType.Error);
+                            LogHelper.NewLog(ex);
                         }
                         break;
                     case 0:
@@ -781,9 +757,10 @@ namespace InkCanvasPlus
                             }
                             e.Stroke.StylusPoints = stylusPoints;
                         }
-                        catch
+                        catch (Exception ex)
                         {
-
+                            LogHelper.WriteLogToFile("SimulatePenPressure", LogHelper.LogType.Error);
+                            LogHelper.NewLog(ex);
                         }
                         break;
                     case 3: //根据 mode == 0 改写，目前暂未完成
@@ -834,25 +811,24 @@ namespace InkCanvasPlus
                             }
                             e.Stroke.StylusPoints = stylusPoints;
                         }
-                        catch
+                        catch (Exception ex)
                         {
-
+                            LogHelper.WriteLogToFile("SimulatePenPressure", LogHelper.LogType.Error);
+                            LogHelper.NewLog(ex);
                         }
                         break;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("StrokeCollected", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
         }
 
         private void SetNewBackupOfStroke()
         {
             lastTouchDownStrokeCollection = inkCanvas.Strokes.Clone();
-            int whiteboardIndex = CurrentWhiteboardIndex;
-            if (currentMode == 0)
-            {
-                whiteboardIndex = 0;
-            }
-            strokeCollections[whiteboardIndex] = lastTouchDownStrokeCollection;
         }
 
         public double GetDistance(Point point1, Point point2)
@@ -1028,7 +1004,11 @@ namespace InkCanvasPlus
                 shortcut.Save();
                 return true;
             }
-            catch (Exception) { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("StartAutomaticallyCreate", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
             return false;
         }
 
@@ -1044,7 +1024,11 @@ namespace InkCanvasPlus
                 System.IO.File.Delete(Environment.GetFolderPath(Environment.SpecialFolder.Startup) + "\\" + exeName + ".lnk");
                 return true;
             }
-            catch (Exception) { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("StartAutomaticallyDel", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
             return false;
         }
         #endregion
@@ -1148,7 +1132,11 @@ namespace InkCanvasPlus
                 }
                 if (keyValue == 1) light = true;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("IsSystemThemeLight", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
             return light;
         }
         #endregion
@@ -1164,45 +1152,67 @@ namespace InkCanvasPlus
 
             GridNotifications.Visibility = Visibility.Collapsed;
 
-            new Thread(new ThreadStart(() =>
+            var token = _backgroundCts.Token;
+            Task.Run(async () =>
             {
-                Thread.Sleep(20);
                 try
                 {
-                    Application.Current.Dispatcher.Invoke(() =>
+                    await Task.Delay(20, token).ConfigureAwait(false);
+                    if (token.IsCancellationRequested) return;
+
+                    try
                     {
-                        if (BtnPPTSlideShowEnd.Visibility == Visibility.Visible)
-                            SaveScreenShot(isHideNotification, $"{pptName}/{previousSlideID}_{DateTime.Now:HH-mm-ss}");
-                        else
-                            SaveScreenShot(isHideNotification);
-                    });
-                }
-                catch
-                {
-                    if (!isHideNotification)
+                        _ui.OnUi(() =>
+                        {
+                            if (IsPptShowActive)
+                                SaveScreenShot(isHideNotification, $"{pptName}/{previousSlideID}_{DateTime.Now:HH-mm-ss}");
+                            else
+                                SaveScreenShot(isHideNotification);
+                        });
+                    }
+                    catch (Exception ex)
                     {
-                        ShowNotification("截图保存失败");
+                        LogHelper.NewLog(ex);
+                        if (!isHideNotification)
+                        {
+                            _ui.OnUi(() => ShowNotification("截图保存失败"));
+                        }
+                    }
+
+                    if (token.IsCancellationRequested) return;
+
+                    try
+                    {
+                        _ui.OnUi(() =>
+                        {
+                            if (inkCanvas.Visibility != Visibility.Visible || inkCanvas.Strokes.Count == 0 || !Settings.Automation.IsAutoSaveStrokesAtScreenshot) return;
+                            SaveInkCanvasStrokes(false);
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        LogHelper.NewLog(ex);
+                    }
+
+                    if (token.IsCancellationRequested) return;
+
+                    if (isHideNotification)
+                    {
+                        _ui.OnUi(() =>
+                        {
+                            BtnClear_Click(BtnClear, null);
+                        });
                     }
                 }
-
-                try
+                catch (OperationCanceledException)
                 {
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        if (inkCanvas.Visibility != Visibility.Visible || inkCanvas.Strokes.Count == 0 || !Settings.Automation.IsAutoSaveStrokesAtScreenshot) return;
-                        SaveInkCanvasStrokes(false);
-                    });
+                    LogHelper.WriteLogToFile("Screenshot cancelled", LogHelper.LogType.Trace);
                 }
-                catch { }
-
-                if (isHideNotification)
+                catch (Exception ex)
                 {
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        BtnClear_Click(BtnClear, null);
-                    });
+                    LogHelper.NewLog(ex);
                 }
-            })).Start();
+            }, token);
         }
 
         private void SaveScreenShot(bool isHideNotification, string fileName = null)
@@ -1268,37 +1278,22 @@ namespace InkCanvasPlus
 
         public void ShowNotification(string notice, bool isShowImmediately = true)
         {
-            lastNotificationShowTime = Environment.TickCount;
-
-            GridNotifications.Visibility = Visibility.Visible;
-            //GridNotifications.Opacity = 1;
-            TextBlockNotice.Text = notice;
-
-            new Thread(new ThreadStart(() =>
+            _ui.OnUi(() =>
             {
-                Thread.Sleep(notificationShowTime + 200);
-                if (Environment.TickCount - lastNotificationShowTime >= notificationShowTime)
+                lastNotificationShowTime = Environment.TickCount;
+
+                GridNotifications.Visibility = Visibility.Visible;
+                TextBlockNotice.Text = notice;
+
+                _notificationHideTimer?.Stop();
+                _notificationHideTimer = _ui.RunOnce(TimeSpan.FromMilliseconds(notificationShowTime + 200), () =>
                 {
-                    Application.Current.Dispatcher.Invoke(() =>
+                    if (Environment.TickCount - lastNotificationShowTime >= notificationShowTime)
                     {
                         GridNotifications.Visibility = Visibility.Collapsed;
-                        //DoubleAnimation daV = new DoubleAnimation(1, 0, new Duration(TimeSpan.FromSeconds(0.15)));
-                        //GridNotifications.BeginAnimation(UIElement.OpacityProperty, daV);
-
-                        //new Thread(new ThreadStart(() => {
-                        //    Thread.Sleep(200);
-                        //    Application.Current.Dispatcher.Invoke(() =>
-                        //    {
-                        //        if (GridNotifications.Opacity == 0)
-                        //        {
-                        //            GridNotifications.Visibility = Visibility.Collapsed;
-                        //            GridNotifications.Opacity = 1;
-                        //        }
-                        //    });
-                        //})).Start();
-                    });
-                }
-            })).Start();
+                    }
+                });
+            });
         }
 
         private void AppendNotification(string notice)
@@ -1385,7 +1380,7 @@ namespace InkCanvasPlus
 
         private void BorderMarker_MouseUp(object sender, MouseButtonEventArgs e)
         {
-            isMarkerMode = !isMarkerMode;
+            ApplyTool(isMarkerMode ? InkTool.Pen : InkTool.Marker);
             FontIconMarker.Foreground = isMarkerMode ? new SolidColorBrush(Colors.DodgerBlue) : (Brush)FindResource("FloatBarForeground");
             ApplyMarkerMode();
             HideSubPanels();
@@ -1405,7 +1400,7 @@ namespace InkCanvasPlus
 
         private void SymbolIconCursor_Click(object sender, RoutedEventArgs e)
         {
-            if (currentMode != 0)
+            if (Surface == AppSurface.Whiteboard)
             {
                 ImageBlackboard_MouseUp(null, null);
             }
@@ -1414,7 +1409,7 @@ namespace InkCanvasPlus
                 var scale = FloatingBarScale;
                 var width = ViewboxFloatingBar.ActualWidth * scale;
                 var centerMargin = new Thickness((SystemParameters.PrimaryScreenWidth - width) / 2, SystemParameters.PrimaryScreenHeight - 60 + ViewboxFloatingBar.ActualHeight * (1 - scale), -2000, -200);
-                var isCentered = BtnPPTSlideShowEnd.Visibility == Visibility.Visible &&
+                var isCentered = IsPptShowActive &&
                                  ViewboxFloatingBar.Margin == centerMargin;
 
                 using (Dispatcher.DisableProcessing())
@@ -1449,7 +1444,7 @@ namespace InkCanvasPlus
             {
                 if (Settings.Automation.IsAutoSaveStrokesAtClear && inkCanvas.Strokes.Count > Settings.Automation.MinimumAutomationStrokeNumber)
                 {
-                    if (BtnPPTSlideShowEnd.Visibility == Visibility.Visible)
+                    if (IsPptShowActive)
                         SaveScreenShot(true, $"{pptName}/{previousSlideID}_{DateTime.Now:HH-mm-ss}");
                     else
                         SaveScreenShot(true);
@@ -1458,7 +1453,7 @@ namespace InkCanvasPlus
             }
             else
             {
-                if (currentMode == 0 && BtnPPTSlideShowEnd.Visibility != Visibility.Visible)
+                if (Surface == AppSurface.Desktop)
                 {
                     BtnHideInkCanvas_Click(BtnHideInkCanvas, null);
                 }
@@ -1496,10 +1491,10 @@ namespace InkCanvasPlus
 
         private async void ImageBlackboard_MouseUp(object sender, MouseButtonEventArgs e)
         {
-            if (currentMode == 0)
+            if (Surface != AppSurface.Whiteboard)
             {
                 //进入黑板
-                if (BtnPPTSlideShowEnd.Visibility == Visibility.Collapsed)
+                if (!IsPptShowActive)
                 {
                     if (Main_Grid.Background != Brushes.Transparent)
                     {
@@ -1533,7 +1528,7 @@ namespace InkCanvasPlus
                 //关闭黑板
                 if (isInMultiTouchMode) BorderMultiTouchMode_MouseUp(null, null);
 
-                if (BtnPPTSlideShowEnd.Visibility != Visibility.Collapsed)
+                if (IsPptShowActive)
                 {
                     lockSmithDesktop = _lockSmith;
                     ChangeLockSmithState(lockSmithPPT);
@@ -1544,7 +1539,7 @@ namespace InkCanvasPlus
             SetColors();
             SetColorByIndex();
 
-            if (currentMode != 0)
+            if (Surface == AppSurface.Whiteboard)
             {
                 if (Settings.Canvas.UsingWhiteboard)
                 {
@@ -1577,7 +1572,7 @@ namespace InkCanvasPlus
                     BorderPenColorRed_MouseUp(BorderPenColorRed, null);
                 }), DispatcherPriority.Loaded);
 
-                if (BtnPPTSlideShowEnd.Visibility == Visibility.Collapsed)
+                if (!IsPptShowActive)
                 {
                     if (pointDesktop != new Point(-1, -1))
                     {
@@ -1603,7 +1598,7 @@ namespace InkCanvasPlus
 
             BtnExit.Foreground = Brushes.White;
             //ThemeManager.Current.ApplicationTheme = ApplicationTheme.Dark;
-            if (currentMode == 0 && inkCanvas.Strokes.Count == 0 && BtnPPTSlideShowEnd.Visibility != Visibility.Visible)
+            if (Surface == AppSurface.Desktop && inkCanvas.Strokes.Count == 0)
             {
                 BtnHideInkCanvas_Click(BtnHideInkCanvas, null);
             }
@@ -1691,7 +1686,10 @@ namespace InkCanvasPlus
                                 {
                                     InkCanvasForInkReplay.Strokes.Remove(s);
                                 }
-                                catch { }
+                                catch (Exception ex)
+                                {
+                                    LogHelper.WriteLogToFile("InkReplayRemoveTemp: " + ex.Message, LogHelper.LogType.Trace);
+                                }
                                 stylusPoints.Add(stylusPoint);
                                 s = new Stroke(stylusPoints.Clone());
                                 s.DrawingAttributes = stroke.DrawingAttributes;
@@ -1716,7 +1714,10 @@ namespace InkCanvasPlus
                                 {
                                     InkCanvasForInkReplay.Strokes.Remove(s);
                                 }
-                                catch { }
+                                catch (Exception ex)
+                                {
+                                    LogHelper.WriteLogToFile("InkReplayRemoveTemp: " + ex.Message, LogHelper.LogType.Trace);
+                                }
                                 stylusPoints.Add(stylusPoint);
                                 s = new Stroke(stylusPoints.Clone());
                                 s.DrawingAttributes = stroke.DrawingAttributes;
@@ -1915,6 +1916,8 @@ namespace InkCanvasPlus
             }
             catch (Exception ex)
             {
+                LogHelper.WriteLogToFile("SaveInkCanvasStrokes", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
                 ShowNotification($"墨迹保存失败：{ex.Message}");
             }
         }
@@ -1973,8 +1976,10 @@ namespace InkCanvasPlus
                         SymbolIconCursor_Click(sender, null);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    LogHelper.WriteLogToFile("OpenStrokes", LogHelper.LogType.Error);
+                    LogHelper.NewLog(ex);
                     ShowNotification("墨迹打开失败");
                 }
             }

@@ -4,6 +4,9 @@ namespace InkCanvasPlus
 {
     public class Settings
     {
+        [JsonProperty("schemaVersion")]
+        public int SchemaVersion { get; set; } = 1;
+
         [JsonProperty("advanced")]
         public Advanced Advanced { get; set; } = new Advanced();
         [JsonProperty("appearance")]

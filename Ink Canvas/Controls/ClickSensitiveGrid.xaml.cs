@@ -1,6 +1,8 @@
-﻿using System.Windows;
+﻿using System;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using InkCanvasPlus.Helpers;
 
 namespace InkCanvasPlus.Controls
 {
@@ -39,7 +41,11 @@ namespace InkCanvasPlus.Controls
                     _e.Source = this;
                     this.RaiseEvent(_e);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    LogHelper.WriteLogToFile("ClickSensitiveGrid", LogHelper.LogType.Error);
+                    LogHelper.NewLog(ex);
+                }
             }
             isMouseDown = false;
         }

@@ -1,11 +1,13 @@
 using AutoUpdaterDotNET;
+using InkCanvasPlus.Domain;
 using InkCanvasPlus.Helpers;
+using InkCanvasPlus.History;
+using InkCanvasPlus.Input;
+using InkCanvasPlus.Services;
 using iNKORE.UI.WPF.Modern;
 using iNKORE.UI.WPF.Modern.Helpers;
 using IWshRuntimeLibrary;
-using Microsoft.Office.Interop.PowerPoint;
 using Microsoft.Win32;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -57,7 +59,7 @@ namespace InkCanvasPlus
                 inkCanvas.StylusUp -= MainWindow_StylusUp;
                 inkCanvas.TouchDown -= MainWindow_TouchDown;
                 inkCanvas.TouchDown += Main_Grid_TouchDown;
-                inkCanvas.EditingMode = InkCanvasEditingMode.Ink;
+                ApplyInkOrMarkerTool();
                 inkCanvas.Children.Clear();
                 isInMultiTouchMode = false;
                 SymbolIconMultiTouchMode.Symbol = iNKORE.UI.WPF.Modern.Controls.Symbol.People;
@@ -69,7 +71,7 @@ namespace InkCanvasPlus
                 inkCanvas.StylusUp += MainWindow_StylusUp;
                 inkCanvas.TouchDown -= Main_Grid_TouchDown;
                 inkCanvas.TouchDown += MainWindow_TouchDown;
-                inkCanvas.EditingMode = InkCanvasEditingMode.None;
+                ApplyTool(InkTool.MultiTouch);
                 inkCanvas.Children.Clear();
                 isInMultiTouchMode = true;
                 SymbolIconMultiTouchMode.Symbol = iNKORE.UI.WPF.Modern.Controls.Symbol.Contact;
@@ -83,11 +85,14 @@ namespace InkCanvasPlus
             {
                 inkCanvas.EraserShape = new EllipseStylusShape(boundWidth, boundWidth);
                 TouchDownPointsList[e.TouchDevice.Id] = InkCanvasEditingMode.EraseByPoint;
+                // Transient palm-size erase while MultiTouch is on. Not a user tool switch:
+                // ApplyTool(PointEraser) would set ForceEraser and clear shape mode.
                 inkCanvas.EditingMode = InkCanvasEditingMode.EraseByPoint;
             }
             else
             {
                 TouchDownPointsList[e.TouchDevice.Id] = InkCanvasEditingMode.None;
+                // Custom stroke visuals draw while EditingMode is None. Not InkTool.MultiTouch.
                 inkCanvas.EditingMode = InkCanvasEditingMode.None;
             }
         }
@@ -109,6 +114,8 @@ namespace InkCanvasPlus
             catch (Exception ex)
             {
                 Label.Content = ex.ToString();
+                LogHelper.WriteLogToFile("MainWindow_StylusUp", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
             }
             try
             {
@@ -123,7 +130,11 @@ namespace InkCanvasPlus
                     TouchDownPointsList.Clear();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("MainWindow_StylusUpCleanup", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
         }
 
         private void MainWindow_StylusMove(object sender, StylusEventArgs e)
@@ -135,7 +146,10 @@ namespace InkCanvasPlus
                 {
                     if (e.StylusDevice.StylusButtons[1].StylusButtonState == StylusButtonState.Down) return;
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    LogHelper.WriteLogToFile("StylusBarrelButton: " + ex.Message, LogHelper.LogType.Trace);
+                }
                 var strokeVisual = GetStrokeVisual(e.StylusDevice.Id);
                 var stylusPointCollection = e.GetStylusPoints(this);
                 foreach (var stylusPoint in stylusPointCollection)
@@ -145,7 +159,11 @@ namespace InkCanvasPlus
 
                 strokeVisual.Redraw();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("MainWindow_StylusMove", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
         }
 
         private StrokeVisual GetStrokeVisual(int id)
@@ -260,6 +278,8 @@ namespace InkCanvasPlus
                 {
                     double size = boundsWidth * 3d * GetEraserSizeCoefficient() * eraserMultiplier;
                     inkCanvas.EraserShape = new EllipseStylusShape(size, size);
+                    // Touch-size heuristic: palm → area erase. BoundsWidth / TouchMultiplier math is unchanged.
+                    // Not ApplyTool: this is per-contact, not a user tool, and would set ForceEraser.
                     inkCanvas.EditingMode = InkCanvasEditingMode.EraseByPoint;
                 }
                 else
@@ -267,12 +287,14 @@ namespace InkCanvasPlus
                     if (StackPanelPPTControls.Visibility == Visibility.Visible && inkCanvas.Strokes.Count == 0 && Settings.PowerPointSettings.IsEnableFingerGestureSlideShowControl)
                     {
                         isLastTouchEraser = false;
+                        // GestureOnly is not an InkTool; ApplyTool cannot express it.
                         inkCanvas.EditingMode = InkCanvasEditingMode.GestureOnly;
                         inkCanvas.Opacity = 0.1;
                     }
                     else
                     {
                         inkCanvas.EraserShape = new EllipseStylusShape(5, 5);
+                        // Touch-size heuristic: finger-width → stroke erase. Not a user tool switch.
                         inkCanvas.EditingMode = InkCanvasEditingMode.EraseByStroke;
                     }
                 }
@@ -282,6 +304,8 @@ namespace InkCanvasPlus
                 isLastTouchEraser = false;
                 inkCanvas.EraserShape = forcePointEraser ? new EllipseStylusShape(50 * GetEraserSizeCoefficient(), 50 * GetEraserSizeCoefficient()) : new EllipseStylusShape(5, 5);
                 if (forceEraser) return;
+                // Restore ink for a normal-size contact without going through ApplyTool so
+                // drawingShapeMode / ForceEraser / marker flag stay as the user left them.
                 inkCanvas.EditingMode = InkCanvasEditingMode.Ink;
             }
         }
@@ -324,6 +348,7 @@ namespace InkCanvasPlus
                 if (inkCanvas.EditingMode != InkCanvasEditingMode.None && inkCanvas.EditingMode != InkCanvasEditingMode.Select)
                 {
                     lastInkCanvasEditingMode = inkCanvas.EditingMode;
+                    // Two-finger gesture: pause inking. Restored on PreviewTouchUp. Not a tool switch.
                     inkCanvas.EditingMode = InkCanvasEditingMode.None;
                 }
             }
@@ -336,24 +361,13 @@ namespace InkCanvasPlus
             {
                 if (inkCanvas.EditingMode == InkCanvasEditingMode.None)
                 {
+                    // Restore the mode saved in PreviewTouchDown. lastInkCanvasEditingMode may be
+                    // GestureOnly or a heuristic erase, so this cannot go through ApplyTool.
                     inkCanvas.EditingMode = lastInkCanvasEditingMode;
                 }
             }
             dec.Remove(e.TouchDevice.Id);
             inkCanvas.Opacity = 1;
-            if (dec.Count == 0)
-            {
-                if (lastTouchDownStrokeCollection.Count() != inkCanvas.Strokes.Count() &&
-                    !(drawingShapeMode == 9 && !isFirstTouchCuboid))
-                {
-                    int whiteboardIndex = CurrentWhiteboardIndex;
-                    if (currentMode == 0)
-                    {
-                        whiteboardIndex = 0;
-                    }
-                    strokeCollections[whiteboardIndex] = lastTouchDownStrokeCollection;
-                }
-            }
         }
         private void inkCanvas_ManipulationStarting(object sender, ManipulationStartingEventArgs e)
         {
@@ -370,6 +384,7 @@ namespace InkCanvasPlus
             if (e.Manipulators.Count() == 0)
             {
                 if (forceEraser) return;
+                // Gesture finished: return to ink without ApplyTool so ForceEraser / shape mode stay put.
                 inkCanvas.EditingMode = InkCanvasEditingMode.Ink;
             }
         }
@@ -424,7 +439,10 @@ namespace InkCanvasPlus
                                 stroke.DrawingAttributes.Width *= md.Scale.X;
                                 stroke.DrawingAttributes.Height *= md.Scale.Y;
                             }
-                            catch { }
+                            catch (Exception ex)
+                            {
+                                LogHelper.WriteLogToFile("StrokeScaleWidth: " + ex.Message, LogHelper.LogType.Trace);
+                            }
                         }
                     }
                 }
@@ -441,7 +459,10 @@ namespace InkCanvasPlus
                                 stroke.DrawingAttributes.Width *= md.Scale.X;
                                 stroke.DrawingAttributes.Height *= md.Scale.Y;
                             }
-                            catch { }
+                            catch (Exception ex)
+                            {
+                                LogHelper.WriteLogToFile("StrokeScaleWidth: " + ex.Message, LogHelper.LogType.Trace);
+                            }
                         }
                     }
                     foreach (Circle circle in circles)
@@ -458,63 +479,31 @@ namespace InkCanvasPlus
 
         #region PowerPoint
 
-        public static Microsoft.Office.Interop.PowerPoint.Application pptApplication = null;
-        public static Microsoft.Office.Interop.PowerPoint.Presentation presentation = null;
-        public static Microsoft.Office.Interop.PowerPoint.Slides slides = null;
-        public static Microsoft.Office.Interop.PowerPoint.Slide slide = null;
-        public static int slidescount = 0;
+        private readonly PowerPointSession _pptSession = new PowerPointSession();
+        int slidescount = 0;
         private void BtnCheckPPT_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                pptApplication = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("PowerPoint.Application");
-                //pptApplication.SlideShowWindows[1].View.Next();
-                if (pptApplication != null)
-                {
-                    //获得演示文稿对象
-                    presentation = pptApplication.ActivePresentation;
-                    pptApplication.SlideShowBegin += PptApplication_SlideShowBegin;
-                    pptApplication.SlideShowNextSlide += PptApplication_SlideShowNextSlide;
-                    pptApplication.SlideShowEnd += PptApplication_SlideShowEnd;
-                    // 获得幻灯片对象集合
-                    slides = presentation.Slides;
-                    // 获得幻灯片的数量
-                    slidescount = slides.Count;
-                    memoryStreams = new MemoryStream[slidescount + 2];
-                    // 获得当前选中的幻灯片
-                    try
-                    {
-                        // 在普通视图下这种方式可以获得当前选中的幻灯片对象
-                        // 然而在阅读模式下，这种方式会出现异常
-                        slide = slides[pptApplication.ActiveWindow.Selection.SlideRange.SlideNumber];
-                    }
-                    catch
-                    {
-                        // 在阅读模式下出现异常时，通过下面的方式来获得当前选中的幻灯片对象
-                        slide = pptApplication.SlideShowWindows[1].View.Slide;
-                    }
-                }
-
-                if (pptApplication == null) throw new Exception();
-                //BtnCheckPPT.Visibility = Visibility.Collapsed;
+                if (!_pptSession.TryAttach()) throw new Exception();
+                slidescount = _pptSession.SlideCount;
+                ResetPptDocument(slidescount);
                 StackPanelPPTControls.Visibility = Visibility.Visible;
             }
-            catch
+            catch (Exception ex)
             {
-                //BtnCheckPPT.Visibility = Visibility.Visible;
                 StackPanelPPTControls.Visibility = Visibility.Collapsed;
+                LogHelper.WriteLogToFile("BtnCheckPPT: " + ex.Message, LogHelper.LogType.Trace);
                 MessageBox.Show("未找到幻灯片");
             }
         }
-        private void ToggleSwitchSupportWPS_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchSupportWPS_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.PowerPointSettings.IsSupportWPS = ToggleSwitchSupportWPS.IsOn;
+            Settings.PowerPointSettings.IsSupportWPS = BorderSettings.ToggleSwitchSupportWPS.IsOn;
             SaveSettingsToFile();
         }
-
-        public static bool isWPSSupportOn => Settings.PowerPointSettings.IsSupportWPS;
 
         public static bool IsShowingRestoreHiddenSlidesWindow = false;
 
@@ -525,61 +514,34 @@ namespace InkCanvasPlus
             if (IsShowingRestoreHiddenSlidesWindow) return;
             try
             {
-                Process[] processes = Process.GetProcessesByName("wpp");
-                if (processes.Length > 0 && !isWPSSupportOn)
+                if (_pptSession.ShouldSkipBecauseWps()) return;
+
+                if (!_pptSession.TryAttach())
                 {
+                    _ui.OnUi(() =>
+                    {
+                        BtnPPTSlideShow.Visibility = Visibility.Collapsed;
+                    });
+                    timerCheckPPT.Start();
                     return;
                 }
 
-                //使用下方提前创建 PowerPoint 实例，将导致 PowerPoint 不再有启动界面
-                //pptApplication = (Microsoft.Office.Interop.PowerPoint.Application)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("91493441-5A91-11CF-8700-00AA0060263B")));
-                //new ComAwareEventInfo(typeof(EApplication_Event), "SlideShowBegin").AddEventHandler(pptApplication, new EApplication_SlideShowBeginEventHandler(this.PptApplication_SlideShowBegin));
-                //new ComAwareEventInfo(typeof(EApplication_Event), "SlideShowEnd").AddEventHandler(pptApplication, new EApplication_SlideShowEndEventHandler(this.PptApplication_SlideShowEnd));
-                //new ComAwareEventInfo(typeof(EApplication_Event), "SlideShowNextSlide").AddEventHandler(pptApplication, new EApplication_SlideShowNextSlideEventHandler(this.PptApplication_SlideShowNextSlide));
-                //ConfigHelper.Instance.IsInitApplicationSuccessful = true;
+                timerCheckPPT.Stop();
+                slidescount = _pptSession.SlideCount;
+                ResetPptDocument(slidescount);
 
-                pptApplication = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("PowerPoint.Application");
+                string presentationName = _pptSession.PresentationName;
+                int attachedSlideCount = _pptSession.SlideCount;
+                bool hasHiddenSlides = _pptSession.HasHiddenSlides;
+                bool slideShowAlreadyRunning = _pptSession.IsSlideShowRunning;
 
-                if (pptApplication != null)
-                {
-                    timerCheckPPT.Stop();
-                    //获得演示文稿对象
-                    presentation = pptApplication.ActivePresentation;
-                    pptApplication.PresentationClose += PptApplication_PresentationClose;
-                    pptApplication.SlideShowBegin += PptApplication_SlideShowBegin;
-                    pptApplication.SlideShowNextSlide += PptApplication_SlideShowNextSlide;
-                    pptApplication.SlideShowEnd += PptApplication_SlideShowEnd;
-                    // 获得幻灯片对象集合
-                    slides = presentation.Slides;
-
-                    // 获得幻灯片的数量
-                    slidescount = slides.Count;
-                    memoryStreams = new MemoryStream[slidescount + 2];
-                    // 获得当前选中的幻灯片
-                    try
-                    {
-                        // 在普通视图下这种方式可以获得当前选中的幻灯片对象
-                        // 然而在阅读模式下，这种方式会出现异常
-                        slide = slides[pptApplication.ActiveWindow.Selection.SlideRange.SlideNumber];
-                    }
-                    catch
-                    {
-                        // 在阅读模式下出现异常时，通过下面的方式来获得当前选中的幻灯片对象
-                        slide = pptApplication.SlideShowWindows[1].View.Slide;
-                    }
-                }
-
-                if (pptApplication == null) return;
-                //BtnCheckPPT.Visibility = Visibility.Collapsed;
-
-                // 跳转到上次播放页
                 if (Settings.PowerPointSettings.IsNotifyPreviousPage)
-                    Application.Current.Dispatcher.BeginInvoke(() =>
+                    _ui.OnUiAsync(() =>
                         {
                             string defaultFolderPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments) +
                                                        @"\Ink Canvas Strokes\Auto Saved\Presentations\";
-                            string folderPath = defaultFolderPath + presentation.Name + "_" + presentation.Slides.Count;
-                            if (File.Exists(folderPath + "/Position") & !IsNotifyPreviousPageWindowShown) //判断是否已存在NotifyPreviousPage窗口
+                            string folderPath = defaultFolderPath + presentationName + "_" + attachedSlideCount;
+                            if (File.Exists(folderPath + "/Position") & !IsNotifyPreviousPageWindowShown)
                             {
                                 if (int.TryParse(File.ReadAllText(folderPath + "/Position"), out var page))
                                 {
@@ -587,70 +549,44 @@ namespace InkCanvasPlus
                                     if (page <= 0) return;
                                     new YesOrNoNotificationWindow($"上次播放到了第 {page} 页, 是否立即跳转", () =>
                                     {
-                                        if (pptApplication.SlideShowWindows.Count >= 1)
-                                        {
-                                            // 如果已经播放了的话, 跳转
-                                            presentation.SlideShowWindow.View.GotoSlide(page);
-                                        }
-                                        else
-                                        {
-                                            presentation.Windows[1].View.GotoSlide(page);
-                                        }
+                                        _pptSession.GotoSlide(page);
                                     }).ShowDialog();
                                 }
                             }
-                        }, DispatcherPriority.Normal);
+                        });
 
-
-                //检查是否有隐藏幻灯片
                 if (Settings.PowerPointSettings.IsNotifyHiddenPage)
                 {
-                    bool isHaveHiddenSlide = false;
-                    foreach (Slide slide in slides)
+                    _ui.OnUiAsync(() =>
                     {
-                        if (slide.SlideShowTransition.Hidden == Microsoft.Office.Core.MsoTriState.msoTrue)
-                        {
-                            isHaveHiddenSlide = true;
-                            break;
-                        }
-                    }
-
-                    Application.Current.Dispatcher.BeginInvoke(() =>
-                    {
-                        if (isHaveHiddenSlide && !IsShowingRestoreHiddenSlidesWindow)
+                        if (hasHiddenSlides && !IsShowingRestoreHiddenSlidesWindow)
                         {
                             IsShowingRestoreHiddenSlidesWindow = true;
                             new YesOrNoNotificationWindow("检测到此演示文稿包含隐藏的幻灯片，是否取消隐藏？",
                                 () =>
                                 {
-                                    foreach (Slide slide in slides)
-                                    {
-                                        if (slide.SlideShowTransition.Hidden ==
-                                            Microsoft.Office.Core.MsoTriState.msoTrue)
-                                        {
-                                            slide.SlideShowTransition.Hidden =
-                                                Microsoft.Office.Core.MsoTriState.msoFalse;
-                                        }
-                                    }
+                                    _pptSession.UnhideHiddenSlides();
                                 }).ShowDialog();
                         }
 
-
-
                         BtnPPTSlideShow.Visibility = Visibility.Visible;
-                    }, DispatcherPriority.Normal);
+                    });
                 }
 
-                //如果检测到已经开始放映，则立即进入画板模式
-                if (pptApplication.SlideShowWindows.Count >= 1)
+                if (slideShowAlreadyRunning)
                 {
-                    PptApplication_SlideShowBegin(pptApplication.SlideShowWindows[1]);
+                    var began = _pptSession.CaptureRunningSlideShow();
+                    if (began != null)
+                    {
+                        PptSession_SlideShowBegan(_pptSession, began);
+                    }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                //StackPanelPPTControls.Visibility = Visibility.Collapsed;
-                Application.Current.Dispatcher.Invoke(() =>
+                LogHelper.WriteLogToFile("TimerCheckPPT", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+                _ui.OnUi(() =>
                 {
                     BtnPPTSlideShow.Visibility = Visibility.Collapsed;
                 });
@@ -658,18 +594,9 @@ namespace InkCanvasPlus
             }
         }
 
-        private void PptApplication_PresentationClose(Presentation Pres)
+        private void PptSession_Detached(object sender, EventArgs e)
         {
-            pptApplication.PresentationClose -= PptApplication_PresentationClose;
-            pptApplication.SlideShowBegin -= PptApplication_SlideShowBegin;
-            pptApplication.SlideShowNextSlide -= PptApplication_SlideShowNextSlide;
-            pptApplication.SlideShowEnd -= PptApplication_SlideShowEnd;
-            pptApplication = null;
             timerCheckPPT.Start();
-            if (BtnPPTSlideShowEnd.Visibility != Visibility.Collapsed)
-            {
-                PptApplication_SlideShowEnd(Pres);
-            }
         }
 
         bool isPresentationHaveBlackSpace = false;
@@ -678,25 +605,30 @@ namespace InkCanvasPlus
         private string pptName = null;
         int currentShowPosition = -1;
         //bool isButtonBackgroundTransparent = true; //此变量仅用于保存用于幻灯片放映时的优化
-        private void PptApplication_SlideShowBegin(SlideShowWindow Wn)
+        private void PptSession_SlideShowBegan(object sender, PowerPointSlideShowBeganEventArgs e)
         {
             LogHelper.WriteLogToFile("PowerPoint Application Slide Show Begin", LogHelper.LogType.Event);
-            Application.Current.Dispatcher.Invoke(() =>
+            _ui.OnUi(() =>
             {
-                if (currentMode == 1)
+                IsPptShowActive = true;
+                if (Surface == AppSurface.Whiteboard)
                 {
                     // 退出画板模式
                     BtnSwitch_Click(null, null);
+                }
+                if (Surface != AppSurface.Whiteboard)
+                {
+                    Surface = AppSurface.PptShow;
                 }
 
                 //调整颜色
                 double screenRatio = SystemParameters.PrimaryScreenWidth / SystemParameters.PrimaryScreenHeight;
                 if (Math.Abs(screenRatio - 16.0 / 9) <= -0.01)
                 {
-                    if (Wn.Presentation.PageSetup.SlideWidth / Wn.Presentation.PageSetup.SlideHeight < 1.65)
+                    if (e.SlideHeight != 0 && e.SlideWidth / e.SlideHeight < 1.65)
                     {
                         isPresentationHaveBlackSpace = true;
-                        //isButtonBackgroundTransparent = ToggleSwitchTransparentButtonBackground.IsOn;
+                        //isButtonBackgroundTransparent = BorderSettings.ToggleSwitchTransparentButtonBackground.IsOn;
 
                         if (BtnSwitchTheme.Content.ToString() == "深色")
                         {
@@ -718,22 +650,22 @@ namespace InkCanvasPlus
 
                 }
 
-                slidescount = Wn.Presentation.Slides.Count;
+                slidescount = e.SlideCount;
                 previousSlideID = 0;
-                memoryStreams = new MemoryStream[slidescount + 2];
+                ResetPptDocument(slidescount);
 
-                pptName = Wn.Presentation.Name;
-                LogHelper.NewLog("Name: " + Wn.Presentation.Name);
+                pptName = e.PresentationName;
+                LogHelper.NewLog("Name: " + e.PresentationName);
                 LogHelper.NewLog("Slides Count: " + slidescount.ToString());
 
                 //检查是否有已有墨迹，并加载
                 if (Settings.PowerPointSettings.IsAutoSaveStrokesInPowerPoint)
                 {
                     string defaultFolderPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments) + @"\Ink Canvas Strokes\Auto Saved\Presentations\";
-                    if (Directory.Exists(defaultFolderPath + Wn.Presentation.Name + "_" + Wn.Presentation.Slides.Count))
+                    if (Directory.Exists(defaultFolderPath + e.PresentationName + "_" + e.SlideCount))
                     {
                         LogHelper.WriteLogToFile("Found saved strokes", LogHelper.LogType.Trace);
-                        FileInfo[] files = new DirectoryInfo(defaultFolderPath + Wn.Presentation.Name + "_" + Wn.Presentation.Slides.Count).GetFiles();
+                        FileInfo[] files = new DirectoryInfo(defaultFolderPath + e.PresentationName + "_" + e.SlideCount).GetFiles();
                         int count = 0;
                         foreach (FileInfo file in files)
                         {
@@ -743,13 +675,11 @@ namespace InkCanvasPlus
                                 try
                                 {
                                     i = int.Parse(System.IO.Path.GetFileNameWithoutExtension(file.Name));
-                                    //var fs = new FileStream(file.FullName, FileMode.Open, FileAccess.Read);
-                                    //MemoryStream ms = new MemoryStream(File.ReadAllBytes(file.FullName));
-                                    //new StrokeCollection(fs).Save(ms);
-                                    //ms.Position = 0;
-                                    memoryStreams[i] = new MemoryStream(File.ReadAllBytes(file.FullName));
-                                    memoryStreams[i].Position = 0;
-                                    count++;
+                                    if (i >= 1 && i <= _pptDocument.PageCount)
+                                    {
+                                        _pptDocument.Pages[i - 1].LoadIsf(File.ReadAllBytes(file.FullName));
+                                        count++;
+                                    }
                                 }
                                 catch (Exception ex)
                                 {
@@ -773,9 +703,9 @@ namespace InkCanvasPlus
 
                 if (Settings.PowerPointSettings.IsShowCanvasAtNewSlideShow && Main_Grid.Background == Brushes.Transparent)
                 {
-                    if (currentMode != 0)
+                    if (Surface == AppSurface.Whiteboard)
                     {
-                        currentMode = 0;
+                        LeaveWhiteboardSurface();
                         GridBackgroundCover.Visibility = Visibility.Collapsed;
 
                         //SaveStrokes();
@@ -811,20 +741,17 @@ namespace InkCanvasPlus
                 }
 
                 isEnteredSlideShowEndEvent = false;
-                PptNavigationTextBlock.Text = $"{Wn.View.CurrentShowPosition}/{Wn.Presentation.Slides.Count}";
+                PptNavigationTextBlock.Text = $"{e.CurrentShowPosition}/{e.SlideCount}";
                 LogHelper.NewLog("PowerPoint Slide Show Loading process complete");
 
-                new Thread(new ThreadStart(() =>
+                _pptFloatBarMarginTimer?.Stop();
+                _pptFloatBarMarginTimer = _ui.RunOnce(TimeSpan.FromMilliseconds(100), () =>
                 {
-                    Thread.Sleep(100);
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        ViewboxFloatingBar.Margin = new Thickness((SystemParameters.PrimaryScreenWidth - ViewboxFloatingBar.ActualWidth * FloatingBarScale) / 2, SystemParameters.PrimaryScreenHeight - 60 + ViewboxFloatingBar.ActualHeight * (1 - FloatingBarScale), -2000, -200);
-                    });
-                })).Start();
+                    ViewboxFloatingBar.Margin = new Thickness((SystemParameters.PrimaryScreenWidth - ViewboxFloatingBar.ActualWidth * FloatingBarScale) / 2, SystemParameters.PrimaryScreenHeight - 60 + ViewboxFloatingBar.ActualHeight * (1 - FloatingBarScale), -2000, -200);
+                });
             });
 
-            Application.Current.Dispatcher.Invoke(() =>
+            _ui.OnUi(() =>
             {
                 UpdateWindowTitle();
             });
@@ -850,7 +777,7 @@ namespace InkCanvasPlus
         }
 
         bool isEnteredSlideShowEndEvent = false; //防止重复调用本函数导致墨迹保存失效
-        private void PptApplication_SlideShowEnd(Presentation Pres)
+        private void PptSession_SlideShowEnded(object sender, PowerPointSlideShowEndedEventArgs e)
         {
             IsNotifyPreviousPageWindowShown = false;
             LogHelper.WriteLogToFile(string.Format("PowerPoint Slide Show End"), LogHelper.LogType.Event);
@@ -863,7 +790,7 @@ namespace InkCanvasPlus
             if (Settings.PowerPointSettings.IsAutoSaveStrokesInPowerPoint)
             {
                 string defaultFolderPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments) + @"\Ink Canvas Strokes\Auto Saved\Presentations\";
-                string folderPath = defaultFolderPath + Pres.Name + "_" + Pres.Slides.Count;
+                string folderPath = defaultFolderPath + e.PresentationName + "_" + e.SlideCount;
                 if (!Directory.Exists(folderPath))
                 {
                     Directory.CreateDirectory(folderPath);
@@ -872,31 +799,39 @@ namespace InkCanvasPlus
                 {
                     File.WriteAllText(folderPath + "/Position", previousSlideID.ToString());
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    LogHelper.WriteLogToFile("SavePptPosition", LogHelper.LogType.Error);
+                    LogHelper.NewLog(ex);
+                }
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     try
                     {
-                        MemoryStream ms = new MemoryStream();
-                        inkCanvas.Strokes.Save(ms);
-                        ms.Position = 0;
-                        memoryStreams[currentShowPosition] = ms;
+                        if (currentShowPosition >= 1 && currentShowPosition <= _pptDocument.PageCount)
+                        {
+                            _pptDocument.Pages[currentShowPosition - 1].CaptureStrokes(inkCanvas.Strokes);
+                        }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("PptSlideShowEndCapture", LogHelper.LogType.Error);
+                        LogHelper.NewLog(ex);
+                    }
                 });
-                for (int i = 1; i <= Pres.Slides.Count; i++)
+                for (int i = 1; i <= e.SlideCount; i++)
                 {
-                    if (memoryStreams[i] != null)
+                    if (i > _pptDocument.PageCount) break;
+                    var page = _pptDocument.Pages[i - 1];
+                    if (page.Strokes != null)
                     {
                         try
                         {
-                            if (memoryStreams[i].Length > 8)
+                            byte[] srcBuf = page.ToIsfBytes();
+                            if (srcBuf.Length > 8)
                             {
-                                byte[] srcBuf = new Byte[memoryStreams[i].Length];
-                                //MessageBox.Show(memoryStreams[i].Length.ToString());
-                                int byteLength = memoryStreams[i].Read(srcBuf, 0, srcBuf.Length);
                                 File.WriteAllBytes(folderPath + @"\" + i.ToString("0000") + ".icstk", srcBuf);
-                                LogHelper.WriteLogToFile(string.Format("Saved strokes for Slide {0}, size={1}, byteLength={2}", i.ToString(), memoryStreams[i].Length, byteLength));
+                                LogHelper.WriteLogToFile(string.Format("Saved strokes for Slide {0}, size={1}, byteLength={2}", i.ToString(), srcBuf.Length, srcBuf.Length));
                             }
                             else
                             {
@@ -933,10 +868,15 @@ namespace InkCanvasPlus
                 StackPanelPPTControls.Visibility = Visibility.Collapsed;
                 ViewBoxStackPanelMain.Margin = new Thickness(10, 10, 10, 55);
                 ChangeLockSmithState(lockSmithDesktop);
-
-                if (currentMode != 0)
+                IsPptShowActive = false;
+                if (Surface == AppSurface.PptShow)
                 {
-                    currentMode = 0;
+                    Surface = AppSurface.Desktop;
+                }
+
+                if (Surface == AppSurface.Whiteboard)
+                {
+                    LeaveWhiteboardSurface();
                     GridBackgroundCover.Visibility = Visibility.Collapsed;
 
                     //SaveStrokes();
@@ -987,41 +927,41 @@ namespace InkCanvasPlus
         }
 
         int previousSlideID = 0;
-        MemoryStream[] memoryStreams = new MemoryStream[50];
+        readonly InkDocument _pptDocument = new InkDocument(1, persistHistory: false);
 
-        private void PptApplication_SlideShowNextSlide(SlideShowWindow Wn)
+        private void ResetPptDocument(int slideCount)
         {
-            LogHelper.WriteLogToFile(string.Format("PowerPoint Next Slide (Slide {0})", Wn.View.CurrentShowPosition), LogHelper.LogType.Event);
-            if (Wn.View.CurrentShowPosition != previousSlideID)
+            _pptDocument.Reset(Math.Max(1, slideCount));
+        }
+
+        private void PptSession_SlideChanged(object sender, PowerPointSlideChangedEventArgs e)
+        {
+            LogHelper.WriteLogToFile(string.Format("PowerPoint Next Slide (Slide {0})", e.CurrentShowPosition), LogHelper.LogType.Event);
+            if (e.CurrentShowPosition != previousSlideID)
             {
                 Application.Current.Dispatcher.Invoke(() =>
                 {
-                    MemoryStream ms = new MemoryStream();
-                    inkCanvas.Strokes.Save(ms);
-                    ms.Position = 0;
-                    memoryStreams[previousSlideID] = ms;
-
-                    if (inkCanvas.Strokes.Count > Settings.Automation.MinimumAutomationStrokeNumber && Settings.PowerPointSettings.IsAutoSaveScreenShotInPowerPoint && !_isPptClickingBtnTurned)
-                        SaveScreenShot(true, Wn.Presentation.Name + "/" + Wn.View.CurrentShowPosition);
-                    _isPptClickingBtnTurned = false;
-
-                    ClearStrokes(true);
-                    timeMachine.ClearStrokeHistory();
-
+                    int index = e.CurrentShowPosition - 1;
+                    bool saveCurrent = previousSlideID > 0;
                     try
                     {
-                        if (memoryStreams[Wn.View.CurrentShowPosition] != null && memoryStreams[Wn.View.CurrentShowPosition].Length > 0)
+                        _pptDocument.GoTo(index, inkCanvas.Strokes, _inkHistory, saveCurrent, () =>
                         {
-                            inkCanvas.Strokes.Add(new StrokeCollection(memoryStreams[Wn.View.CurrentShowPosition]));
-                        }
-                        currentShowPosition = Wn.View.CurrentShowPosition;
+                            if (inkCanvas.Strokes.Count > Settings.Automation.MinimumAutomationStrokeNumber && Settings.PowerPointSettings.IsAutoSaveScreenShotInPowerPoint && !_isPptClickingBtnTurned)
+                                SaveScreenShot(true, e.PresentationName + "/" + e.CurrentShowPosition);
+                            _isPptClickingBtnTurned = false;
+                        });
+                        currentShowPosition = e.CurrentShowPosition;
                     }
-                    catch
-                    { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("PptSlideChanged", LogHelper.LogType.Error);
+                        LogHelper.NewLog(ex);
+                    }
 
-                    PptNavigationTextBlock.Text = $"{Wn.View.CurrentShowPosition}/{Wn.Presentation.Slides.Count}";
+                    PptNavigationTextBlock.Text = $"{e.CurrentShowPosition}/{e.SlideCount}";
                 });
-                previousSlideID = Wn.View.CurrentShowPosition;
+                previousSlideID = e.CurrentShowPosition;
 
             }
         }
@@ -1030,53 +970,44 @@ namespace InkCanvasPlus
 
         private void BtnPPTSlidesUp_Click(object sender, RoutedEventArgs e)
         {
-            if (currentMode == 1)
+            if (Surface == AppSurface.Whiteboard)
             {
                 GridBackgroundCover.Visibility = Visibility.Collapsed;
-                currentMode = 0;
+                LeaveWhiteboardSurface();
             }
 
             _isPptClickingBtnTurned = true;
             if (inkCanvas.Strokes.Count > Settings.Automation.MinimumAutomationStrokeNumber &&
                 Settings.PowerPointSettings.IsAutoSaveScreenShotInPowerPoint)
-                SaveScreenShot(true, pptApplication.SlideShowWindows[1].Presentation.Name + "/" + pptApplication.SlideShowWindows[1].View.CurrentShowPosition);
+                SaveScreenShot(true, _pptSession.GetScreenshotLabel());
             try
             {
-                new Thread(new ThreadStart(() =>
-                {
-                    pptApplication.SlideShowWindows[1].Activate();
-                    pptApplication.SlideShowWindows[1].View.Previous();
-                })).Start();
+                _pptSession.PreviousSlide();
             }
-            catch
+            catch (Exception ex)
             {
-                //BtnCheckPPT.Visibility = Visibility.Visible;
-                StackPanelPPTControls.Visibility = Visibility.Collapsed;
+                LogHelper.NewLog(ex);
             }
         }
 
         private void BtnPPTSlidesDown_Click(object sender, RoutedEventArgs e)
         {
-            if (currentMode == 1)
+            if (Surface == AppSurface.Whiteboard)
             {
                 GridBackgroundCover.Visibility = Visibility.Collapsed;
-                currentMode = 0;
+                LeaveWhiteboardSurface();
             }
             _isPptClickingBtnTurned = true;
             if (inkCanvas.Strokes.Count > Settings.Automation.MinimumAutomationStrokeNumber &&
                 Settings.PowerPointSettings.IsAutoSaveScreenShotInPowerPoint)
-                SaveScreenShot(true, pptApplication.SlideShowWindows[1].Presentation.Name + "/" + pptApplication.SlideShowWindows[1].View.CurrentShowPosition);
+                SaveScreenShot(true, _pptSession.GetScreenshotLabel());
             try
             {
-                new Thread(new ThreadStart(() =>
-                {
-                    pptApplication.SlideShowWindows[1].Activate();
-                    pptApplication.SlideShowWindows[1].View.Next();
-                })).Start();
+                _pptSession.NextSlide();
             }
-            catch
+            catch (Exception ex)
             {
-                StackPanelPPTControls.Visibility = Visibility.Collapsed;
+                LogHelper.NewLog(ex);
             }
         }
 
@@ -1087,14 +1018,15 @@ namespace InkCanvasPlus
             BtnHideInkCanvas_Click(sender, e);
             try
             {
-                pptApplication.SlideShowWindows[1].SlideNavigation.Visible = true;
+                _pptSession.ShowSlideNavigation();
             }
-            catch
+            catch (Exception ex)
             {
+                LogHelper.WriteLogToFile("ShowSlideNavigation: " + ex.Message, LogHelper.LogType.Trace);
                 ShowNotification("此功能不支持阅读模式，请在幻灯片放映模式下使用。");
             }
             // 控制居中
-            if (BtnPPTSlideShowEnd.Visibility == Visibility.Visible)
+            if (IsPptShowActive)
             {
                 if (ViewboxFloatingBar.Margin == new Thickness((SystemParameters.PrimaryScreenWidth - ViewboxFloatingBar.ActualWidth * FloatingBarScale) / 2, SystemParameters.PrimaryScreenHeight - 60 + ViewboxFloatingBar.ActualHeight * (1 - FloatingBarScale), -2000, -200))
                 {
@@ -1108,39 +1040,43 @@ namespace InkCanvasPlus
 
         private void BtnPPTSlideShow_Click(object sender, RoutedEventArgs e)
         {
-            new Thread(new ThreadStart(() =>
+            try
             {
-                try
-                {
-                    presentation.SlideShowSettings.Run();
-                }
-                catch { }
-            })).Start();
+                _pptSession.RunSlideShow();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.NewLog(ex);
+            }
         }
 
         private void BtnPPTSlideShowEnd_Click(object sender, RoutedEventArgs e)
         {
-            Application.Current.Dispatcher.Invoke(() =>
+            _ui.OnUi(() =>
             {
                 try
                 {
-                    MemoryStream ms = new MemoryStream();
-                    inkCanvas.Strokes.Save(ms);
-                    ms.Position = 0;
-                    memoryStreams[pptApplication.SlideShowWindows[1].View.CurrentShowPosition] = ms;
+                    int pos = _pptSession.GetCurrentShowPosition();
+                    if (pos >= 1 && pos <= _pptDocument.PageCount)
+                    {
+                        _pptDocument.Pages[pos - 1].CaptureStrokes(inkCanvas.Strokes);
+                    }
                     timeMachine.ClearStrokeHistory();
                     IsNotifyPreviousPageWindowShown = false;
                 }
-                catch { }
-            });
-            new Thread(new ThreadStart(() =>
-            {
-                try
+                catch (Exception ex)
                 {
-                    pptApplication.SlideShowWindows[1].View.Exit();
+                    LogHelper.NewLog(ex);
                 }
-                catch { }
-            })).Start();
+            });
+            try
+            {
+                _pptSession.ExitSlideShow();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.NewLog(ex);
+            }
         }
 
         #endregion
@@ -1149,10 +1085,10 @@ namespace InkCanvasPlus
 
         #region Behavior
 
-        private void ToggleSwitchRunAtStartup_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchRunAtStartup_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            if (ToggleSwitchRunAtStartup.IsOn)
+            if (BorderSettings.ToggleSwitchRunAtStartup.IsOn)
             {
                 StartAutomaticallyCreate("InkCanvas");
             }
@@ -1162,11 +1098,11 @@ namespace InkCanvasPlus
             }
         }
 
-        private void ToggleSwitchSupportPowerPoint_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchSupportPowerPoint_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.PowerPointSettings.PowerPointSupport = ToggleSwitchSupportPowerPoint.IsOn;
+            Settings.PowerPointSettings.PowerPointSupport = BorderSettings.ToggleSwitchSupportPowerPoint.IsOn;
             SaveSettingsToFile();
 
             if (Settings.PowerPointSettings.PowerPointSupport)
@@ -1179,11 +1115,11 @@ namespace InkCanvasPlus
             }
         }
 
-        private void ToggleSwitchShowCanvasAtNewSlideShow_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchShowCanvasAtNewSlideShow_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.PowerPointSettings.IsShowCanvasAtNewSlideShow = ToggleSwitchShowCanvasAtNewSlideShow.IsOn;
+            Settings.PowerPointSettings.IsShowCanvasAtNewSlideShow = BorderSettings.ToggleSwitchShowCanvasAtNewSlideShow.IsOn;
             SaveSettingsToFile();
         }
 
@@ -1191,19 +1127,19 @@ namespace InkCanvasPlus
 
         #region Startup
 
-        private void ToggleSwitchAutoHideCanvas_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchAutoHideCanvas_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.Startup.IsAutoHideCanvas = ToggleSwitchAutoHideCanvas.IsOn;
+            Settings.Startup.IsAutoHideCanvas = BorderSettings.ToggleSwitchAutoHideCanvas.IsOn;
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchAutoEnterModeFinger_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchAutoEnterModeFinger_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.Startup.IsAutoEnterModeFinger = ToggleSwitchAutoEnterModeFinger.IsOn;
+            Settings.Startup.IsAutoEnterModeFinger = BorderSettings.ToggleSwitchAutoEnterModeFinger.IsOn;
             SaveSettingsToFile();
         }
 
@@ -1211,31 +1147,25 @@ namespace InkCanvasPlus
 
         #region Appearance
 
-
-        private void SideControlOpacitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-
-        }
-
-        private void ToggleSwitchAutoCollapseFloatBar_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchAutoCollapseFloatBar_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Appearance.IsAutoCollapseFloatBar = ToggleSwitchAutoCollapseFloatBar.IsOn;
+            Settings.Appearance.IsAutoCollapseFloatBar = BorderSettings.ToggleSwitchAutoCollapseFloatBar.IsOn;
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchFloatBarShowOnRight_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchFloatBarShowOnRight_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Appearance.IsFloatBarShowOnRight = ToggleSwitchFloatBarShowOnRight.IsOn;
+            Settings.Appearance.IsFloatBarShowOnRight = BorderSettings.ToggleSwitchFloatBarShowOnRight.IsOn;
             SaveSettingsToFile();
             UpdateFloatBarExpansionDirection();
         }
 
-        private void ToggleSwitchRememberFloatBarPosition_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchRememberFloatBarPosition_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Appearance.IsRememberFloatBarPosition = ToggleSwitchRememberFloatBarPosition.IsOn;
+            Settings.Appearance.IsRememberFloatBarPosition = BorderSettings.ToggleSwitchRememberFloatBarPosition.IsOn;
             SaveSettingsToFile();
             if (Settings.Appearance.IsRememberFloatBarPosition)
             {
@@ -1271,7 +1201,7 @@ namespace InkCanvasPlus
             }
 
             // 重置位置
-            if (currentMode != 0 || BtnPPTSlideShowEnd.Visibility == Visibility.Visible) return;
+            if (Surface != AppSurface.Desktop) return;
             if (isFloatBarShowOnRight)
             {
                 ViewboxFloatingBar.Margin = new Thickness(SystemParameters.WorkArea.Left + SystemParameters.WorkArea.Width - 80 - ViewboxFloatingBar.ActualWidth * FloatingBarScale, SystemParameters.WorkArea.Top + SystemParameters.WorkArea.Height - 80 + ViewboxFloatingBar.ActualHeight * (1 - FloatingBarScale), -2000, -200);
@@ -1282,14 +1212,14 @@ namespace InkCanvasPlus
             }
         }
 
-        private void ToggleSwitchShowButtonExit_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchShowButtonExit_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.Appearance.IsShowExitButton = ToggleSwitchShowButtonExit.IsOn;
+            Settings.Appearance.IsShowExitButton = BorderSettings.ToggleSwitchShowButtonExit.IsOn;
             SaveSettingsToFile();
 
-            if (ToggleSwitchShowButtonExit.IsOn)
+            if (BorderSettings.ToggleSwitchShowButtonExit.IsOn)
             {
                 BtnExit.Visibility = Visibility.Visible;
             }
@@ -1299,14 +1229,14 @@ namespace InkCanvasPlus
             }
         }
 
-        private void ToggleSwitchShowButtonEraser_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchShowButtonEraser_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.Appearance.IsShowEraserButton = ToggleSwitchShowButtonEraser.IsOn;
+            Settings.Appearance.IsShowEraserButton = BorderSettings.ToggleSwitchShowButtonEraser.IsOn;
             SaveSettingsToFile();
 
-            if (ToggleSwitchShowButtonEraser.IsOn)
+            if (BorderSettings.ToggleSwitchShowButtonEraser.IsOn)
             {
                 BtnErase.Visibility = Visibility.Visible;
             }
@@ -1315,11 +1245,11 @@ namespace InkCanvasPlus
                 BtnErase.Visibility = Visibility.Collapsed;
             }
         }
-        private void ToggleSwitchShowButtonPPTNavigation_OnToggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchShowButtonPPTNavigation_OnToggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.PowerPointSettings.IsShowPPTNavigation = ToggleSwitchShowButtonPPTNavigation.IsOn;
+            Settings.PowerPointSettings.IsShowPPTNavigation = BorderSettings.ToggleSwitchShowButtonPPTNavigation.IsOn;
             SaveSettingsToFile();
 
             ViewboxPPTSidesControl.Visibility =
@@ -1328,11 +1258,11 @@ namespace InkCanvasPlus
                 Settings.PowerPointSettings.IsShowPPTNavigation ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        private void ToggleSwitchShowVerticalPPTNavigation_OnToggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchShowVerticalPPTNavigation_OnToggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.PowerPointSettings.IsShowVerticalPPTNavigation = ToggleSwitchShowVerticalPPTNavigation.IsOn;
+            Settings.PowerPointSettings.IsShowVerticalPPTNavigation = BorderSettings.ToggleSwitchShowVerticalPPTNavigation.IsOn;
             SaveSettingsToFile();
 
             ViewboxPPTLeftCenter.Visibility =
@@ -1341,15 +1271,15 @@ namespace InkCanvasPlus
                 Settings.PowerPointSettings.IsShowVerticalPPTNavigation ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        private void ComboBoxTheme_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        internal void ComboBoxTheme_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Appearance.Theme = ComboBoxTheme.SelectedIndex;
+            Settings.Appearance.Theme = BorderSettings.ComboBoxTheme.SelectedIndex;
             SystemEvents_UserPreferenceChanged(null, null);
             SaveSettingsToFile();
         }
 
-        private void BtnColorConfig_Click(object sender, RoutedEventArgs e)
+        internal void BtnColorConfig_Click(object sender, RoutedEventArgs e)
         {
             new ColorConfigWindow { Owner = this }.Show();
             SetColors();
@@ -1357,14 +1287,14 @@ namespace InkCanvasPlus
         }
 
 
-        private void ToggleSwitchShowButtonHideControl_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchShowButtonHideControl_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.Appearance.IsShowHideControlButton = ToggleSwitchShowButtonHideControl.IsOn;
+            Settings.Appearance.IsShowHideControlButton = BorderSettings.ToggleSwitchShowButtonHideControl.IsOn;
             SaveSettingsToFile();
 
-            if (ToggleSwitchShowButtonHideControl.IsOn)
+            if (BorderSettings.ToggleSwitchShowButtonHideControl.IsOn)
             {
                 BtnHideControl.Visibility = Visibility.Visible;
             }
@@ -1374,14 +1304,14 @@ namespace InkCanvasPlus
             }
         }
 
-        private void ToggleSwitchShowButtonLRSwitch_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchShowButtonLRSwitch_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.Appearance.IsShowLRSwitchButton = ToggleSwitchShowButtonLRSwitch.IsOn;
+            Settings.Appearance.IsShowLRSwitchButton = BorderSettings.ToggleSwitchShowButtonLRSwitch.IsOn;
             SaveSettingsToFile();
 
-            if (ToggleSwitchShowButtonLRSwitch.IsOn)
+            if (BorderSettings.ToggleSwitchShowButtonLRSwitch.IsOn)
             {
                 BtnSwitchSide.Visibility = Visibility.Visible;
             }
@@ -1391,14 +1321,14 @@ namespace InkCanvasPlus
             }
         }
 
-        private void ToggleSwitchShowButtonModeFinger_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchShowButtonModeFinger_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.Appearance.IsShowModeFingerToggleSwitch = ToggleSwitchShowButtonModeFinger.IsOn;
+            Settings.Appearance.IsShowModeFingerToggleSwitch = BorderSettings.ToggleSwitchShowButtonModeFinger.IsOn;
             SaveSettingsToFile();
 
-            if (ToggleSwitchShowButtonModeFinger.IsOn)
+            if (BorderSettings.ToggleSwitchShowButtonModeFinger.IsOn)
             {
                 StackPanelModeFinger.Visibility = Visibility.Visible;
             }
@@ -1408,11 +1338,11 @@ namespace InkCanvasPlus
             }
         }
 
-        private void ToggleSwitchTransparentButtonBackground_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchTransparentButtonBackground_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.Appearance.IsTransparentButtonBackground = ToggleSwitchTransparentButtonBackground.IsOn;
+            Settings.Appearance.IsTransparentButtonBackground = BorderSettings.ToggleSwitchTransparentButtonBackground.IsOn;
             if (Settings.Appearance.IsTransparentButtonBackground)
             {
                 BtnExit.Background = new SolidColorBrush(StringToColor("#7F909090"));
@@ -1434,11 +1364,11 @@ namespace InkCanvasPlus
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchShowCursor_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchShowCursor_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.Canvas.IsShowCursor = ToggleSwitchShowCursor.IsOn;
+            Settings.Canvas.IsShowCursor = BorderSettings.ToggleSwitchShowCursor.IsOn;
             inkCanvas_EditingModeChanged(inkCanvas, null);
 
             SaveSettingsToFile();
@@ -1448,29 +1378,29 @@ namespace InkCanvasPlus
 
         #region Canvas
 
-        private void ComboBoxPenStyle_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        internal void ComboBoxPenStyle_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Canvas.InkStyle = ComboBoxPenStyle.SelectedIndex;
+            Settings.Canvas.InkStyle = BorderSettings.ComboBoxPenStyle.SelectedIndex;
             SaveSettingsToFile();
         }
 
-        private void ComboBoxEraserSize_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        internal void ComboBoxEraserSize_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Canvas.EraserSize = ComboBoxEraserSize.SelectedIndex - 2;
+            Settings.Canvas.EraserSize = BorderSettings.ComboBoxEraserSize.SelectedIndex - 2;
             SaveSettingsToFile();
         }
 
 
-        private void ComboBoxEraserType_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+        internal void ComboBoxEraserType_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Canvas.EraserType = ComboBoxEraserType.SelectedIndex;
+            Settings.Canvas.EraserType = BorderSettings.ComboBoxEraserType.SelectedIndex;
             SaveSettingsToFile();
         }
 
-        private void FloatingBarScaleSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        internal void FloatingBarScaleSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             var slider = (Slider)sender;
             double val = slider.Value / 100.0;
@@ -1488,7 +1418,7 @@ namespace InkCanvasPlus
             ViewboxFloatingBarScaleTransform.ScaleY = clampedVal;
         }
 
-        private void InkWidthSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        internal void InkWidthSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (!isLoaded) return;
 
@@ -1498,10 +1428,10 @@ namespace InkCanvasPlus
             SaveSettingsToFile();
         }
 
-        private void ComboBoxHyperbolaAsymptoteOption_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        internal void ComboBoxHyperbolaAsymptoteOption_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Canvas.HyperbolaAsymptoteOption = (OptionalOperation)ComboBoxHyperbolaAsymptoteOption.SelectedIndex;
+            Settings.Canvas.HyperbolaAsymptoteOption = (OptionalOperation)BorderSettings.ComboBoxHyperbolaAsymptoteOption.SelectedIndex;
             SaveSettingsToFile();
         }
 
@@ -1509,80 +1439,64 @@ namespace InkCanvasPlus
 
         #region Automation
 
-        private void ToggleSwitchAutoKillPptService_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchAutoKillPptService_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Automation.IsAutoKillPptService = ToggleSwitchAutoKillPptService.IsOn;
+            Settings.Automation.IsAutoKillPptService = BorderSettings.ToggleSwitchAutoKillPptService.IsOn;
             SaveSettingsToFile();
-
-            if (Settings.Automation.IsAutoKillEasiNote || Settings.Automation.IsAutoKillPptService)
-            {
-                timerKillProcess.Start();
-            }
-            else
-            {
-                timerKillProcess.Stop();
-            }
+            SyncProcessWatchdog();
         }
 
-        private void ToggleSwitchAutoKillEasiNote_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchAutoKillEasiNote_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Automation.IsAutoKillEasiNote = ToggleSwitchAutoKillEasiNote.IsOn;
+            Settings.Automation.IsAutoKillEasiNote = BorderSettings.ToggleSwitchAutoKillEasiNote.IsOn;
             SaveSettingsToFile();
-
-            if (Settings.Automation.IsAutoKillEasiNote || Settings.Automation.IsAutoKillPptService)
-            {
-                timerKillProcess.Start();
-            }
-            else
-            {
-                timerKillProcess.Stop();
-            }
+            SyncProcessWatchdog();
         }
 
-        private void ToggleSwitchSaveScreenshotsInDateFolders_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchSaveScreenshotsInDateFolders_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Automation.IsSaveScreenshotsInDateFolders = ToggleSwitchSaveScreenshotsInDateFolders.IsOn;
+            Settings.Automation.IsSaveScreenshotsInDateFolders = BorderSettings.ToggleSwitchSaveScreenshotsInDateFolders.IsOn;
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchAutoSaveStrokesAtScreenshot_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchAutoSaveStrokesAtScreenshot_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Automation.IsAutoSaveStrokesAtScreenshot = ToggleSwitchAutoSaveStrokesAtScreenshot.IsOn;
-            ToggleSwitchAutoSaveStrokesAtClear.Header =
-                ToggleSwitchAutoSaveStrokesAtScreenshot.IsOn ? "清屏时自动截图并保存墨迹" : "清屏时自动截图";
+            Settings.Automation.IsAutoSaveStrokesAtScreenshot = BorderSettings.ToggleSwitchAutoSaveStrokesAtScreenshot.IsOn;
+            BorderSettings.ToggleSwitchAutoSaveStrokesAtClear.Header =
+                BorderSettings.ToggleSwitchAutoSaveStrokesAtScreenshot.IsOn ? "清屏时自动截图并保存墨迹" : "清屏时自动截图";
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchAutoSaveStrokesAtClear_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchAutoSaveStrokesAtClear_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Automation.IsAutoSaveStrokesAtClear = ToggleSwitchAutoSaveStrokesAtClear.IsOn;
+            Settings.Automation.IsAutoSaveStrokesAtClear = BorderSettings.ToggleSwitchAutoSaveStrokesAtClear.IsOn;
             SaveSettingsToFile();
         }
 
 
-        private void ToggleSwitchExitingWritingMode_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchExitingWritingMode_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Automation.IsAutoClearWhenExitingWritingMode = ToggleSwitchClearExitingWritingMode.IsOn;
+            Settings.Automation.IsAutoClearWhenExitingWritingMode = BorderSettings.ToggleSwitchClearExitingWritingMode.IsOn;
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchHideStrokeWhenSelecting_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchHideStrokeWhenSelecting_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Canvas.HideStrokeWhenSelecting = ToggleSwitchHideStrokeWhenSelecting.IsOn;
+            Settings.Canvas.HideStrokeWhenSelecting = BorderSettings.ToggleSwitchHideStrokeWhenSelecting.IsOn;
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchUsingWhiteboard_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchUsingWhiteboard_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Canvas.UsingWhiteboard = ToggleSwitchUsingWhiteboard.IsOn;
+            Settings.Canvas.UsingWhiteboard = BorderSettings.ToggleSwitchUsingWhiteboard.IsOn;
             if (!Settings.Canvas.UsingWhiteboard)
             {
                 BtnSwitchTheme.Content = "浅色";
@@ -1595,53 +1509,53 @@ namespace InkCanvasPlus
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchAutoSaveStrokesInPowerPoint_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchAutoSaveStrokesInPowerPoint_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.PowerPointSettings.IsAutoSaveStrokesInPowerPoint = ToggleSwitchAutoSaveStrokesInPowerPoint.IsOn;
+            Settings.PowerPointSettings.IsAutoSaveStrokesInPowerPoint = BorderSettings.ToggleSwitchAutoSaveStrokesInPowerPoint.IsOn;
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchNotifyPreviousPage_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchNotifyPreviousPage_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.PowerPointSettings.IsNotifyPreviousPage = ToggleSwitchNotifyPreviousPage.IsOn;
+            Settings.PowerPointSettings.IsNotifyPreviousPage = BorderSettings.ToggleSwitchNotifyPreviousPage.IsOn;
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchNotifyHiddenPage_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchNotifyHiddenPage_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.PowerPointSettings.IsNotifyHiddenPage = ToggleSwitchNotifyHiddenPage.IsOn;
+            Settings.PowerPointSettings.IsNotifyHiddenPage = BorderSettings.ToggleSwitchNotifyHiddenPage.IsOn;
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchNoStrokeClearInPowerPoint_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchNoStrokeClearInPowerPoint_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.PowerPointSettings.IsNoClearStrokeOnSelectWhenInPowerPoint = ToggleSwitchNoStrokeClearInPowerPoint.IsOn;
+            Settings.PowerPointSettings.IsNoClearStrokeOnSelectWhenInPowerPoint = BorderSettings.ToggleSwitchNoStrokeClearInPowerPoint.IsOn;
             SaveSettingsToFile();
         }
 
 
-        private void ToggleSwitchShowStrokeOnSelectInPowerPoint_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchShowStrokeOnSelectInPowerPoint_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.PowerPointSettings.IsShowStrokeOnSelectInPowerPoint = ToggleSwitchShowStrokeOnSelectInPowerPoint.IsOn;
+            Settings.PowerPointSettings.IsShowStrokeOnSelectInPowerPoint = BorderSettings.ToggleSwitchShowStrokeOnSelectInPowerPoint.IsOn;
             SaveSettingsToFile();
         }
 
-        private void SideControlMinimumAutomationSlider_ValueChanged(object sender, RoutedEventArgs e)
+        internal void SideControlMinimumAutomationSlider_ValueChanged(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Automation.MinimumAutomationStrokeNumber = (int)SideControlMinimumAutomationSlider.Value;
+            Settings.Automation.MinimumAutomationStrokeNumber = (int)BorderSettings.SideControlMinimumAutomationSlider.Value;
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchAutoSaveScreenShotInPowerPoint_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchAutoSaveScreenShotInPowerPoint_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.PowerPointSettings.IsAutoSaveScreenShotInPowerPoint = ToggleSwitchAutoSaveScreenShotInPowerPoint.IsOn;
+            Settings.PowerPointSettings.IsAutoSaveScreenShotInPowerPoint = BorderSettings.ToggleSwitchAutoSaveScreenShotInPowerPoint.IsOn;
             SaveSettingsToFile();
         }
 
@@ -1650,57 +1564,57 @@ namespace InkCanvasPlus
         #region Gesture
 
 
-        private void ToggleSwitchEnableFingerGestureSlideShowControl_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchEnableFingerGestureSlideShowControl_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.PowerPointSettings.IsEnableFingerGestureSlideShowControl = ToggleSwitchEnableFingerGestureSlideShowControl.IsOn;
+            Settings.PowerPointSettings.IsEnableFingerGestureSlideShowControl = BorderSettings.ToggleSwitchEnableFingerGestureSlideShowControl.IsOn;
 
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchDisableLockSmithByDefault_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchDisableLockSmithByDefault_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.Gesture.IsDisableLockSmithByDefault = ToggleSwitchDisableLockSmithByDefault.IsOn;
+            Settings.Gesture.IsDisableLockSmithByDefault = BorderSettings.ToggleSwitchDisableLockSmithByDefault.IsOn;
 
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchEnableTwoFingerZoom_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchEnableTwoFingerZoom_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.Gesture.IsEnableTwoFingerZoom = ToggleSwitchEnableTwoFingerZoom.IsOn;
+            Settings.Gesture.IsEnableTwoFingerZoom = BorderSettings.ToggleSwitchEnableTwoFingerZoom.IsOn;
 
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchEnableTwoFingerTranslate_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchEnableTwoFingerTranslate_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.Gesture.IsEnableTwoFingerTranslate = ToggleSwitchEnableTwoFingerTranslate.IsOn;
+            Settings.Gesture.IsEnableTwoFingerTranslate = BorderSettings.ToggleSwitchEnableTwoFingerTranslate.IsOn;
 
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchEnableTwoFingerRotation_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchEnableTwoFingerRotation_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.Gesture.IsEnableTwoFingerRotation = ToggleSwitchEnableTwoFingerRotation.IsOn;
-            Settings.Gesture.IsEnableTwoFingerRotationOnSelection = ToggleSwitchEnableTwoFingerRotationOnSelection.IsOn;
+            Settings.Gesture.IsEnableTwoFingerRotation = BorderSettings.ToggleSwitchEnableTwoFingerRotation.IsOn;
+            Settings.Gesture.IsEnableTwoFingerRotationOnSelection = BorderSettings.ToggleSwitchEnableTwoFingerRotationOnSelection.IsOn;
 
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchEnableTwoFingerGestureInPresentationMode_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchEnableTwoFingerGestureInPresentationMode_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
 
-            Settings.PowerPointSettings.IsEnableTwoFingerGestureInPresentationMode = ToggleSwitchEnableTwoFingerGestureInPresentationMode.IsOn;
+            Settings.PowerPointSettings.IsEnableTwoFingerGestureInPresentationMode = BorderSettings.ToggleSwitchEnableTwoFingerGestureInPresentationMode.IsOn;
 
             SaveSettingsToFile();
         }
@@ -1709,35 +1623,39 @@ namespace InkCanvasPlus
 
         #region Reset
 
-        private void BtnResetToDefault_Click(object sender, RoutedEventArgs e)
+        internal void BtnResetToDefault_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                FlyoutResetToDefault.Hide();
+                BorderSettings.FlyoutResetToDefault.Hide();
                 isLoaded = false;
                 File.Delete("settings.json");
                 Settings = new Settings();
                 LoadSettings(false);
                 isLoaded = true;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("BtnResetToDefault", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
         }
 
         #endregion
 
         #region Ink To Shape
 
-        private void ToggleSwitchEnableInkToShape_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchEnableInkToShape_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.InkToShape.IsInkToShapeEnabled = ToggleSwitchEnableInkToShape.IsOn;
+            Settings.InkToShape.IsInkToShapeEnabled = BorderSettings.ToggleSwitchEnableInkToShape.IsOn;
             SaveSettingsToFile();
         }
 
-        private void LineNormalizationThresholdSlider_ValueChanged(object sender, RoutedEventArgs e)
+        internal void LineNormalizationThresholdSlider_ValueChanged(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.InkToShape.LineNormalizationThreshold = (double)LineNormalizationThresholdSlider.Value;
+            Settings.InkToShape.LineNormalizationThreshold = (double)BorderSettings.LineNormalizationThresholdSlider.Value;
             SaveSettingsToFile();
         }
 
@@ -1745,56 +1663,46 @@ namespace InkCanvasPlus
 
         #region Advanced
 
-        private void ToggleSwitchIsSpecialScreen_OnToggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchIsSpecialScreen_OnToggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Advanced.IsSpecialScreen = ToggleSwitchIsSpecialScreen.IsOn;
-            TouchMultiplierSlider.Visibility = ToggleSwitchIsSpecialScreen.IsOn ? Visibility.Visible : Visibility.Collapsed;
+            Settings.Advanced.IsSpecialScreen = BorderSettings.ToggleSwitchIsSpecialScreen.IsOn;
+            BorderSettings.TouchMultiplierSlider.Visibility = BorderSettings.ToggleSwitchIsSpecialScreen.IsOn ? Visibility.Visible : Visibility.Collapsed;
             SaveSettingsToFile();
         }
 
-        private void TouchMultiplierSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        internal void TouchMultiplierSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (!isLoaded) return;
             Settings.Advanced.TouchMultiplier = e.NewValue;
             SaveSettingsToFile();
         }
 
-        private void BorderCalculateMultiplier_TouchDown(object sender, TouchEventArgs e)
-        {
-            var args = e.GetTouchPoint(null).Bounds;
-            double value;
-            if (!Settings.Advanced.IsQuadIR) value = args.Width;
-            else value = Math.Sqrt(args.Width * args.Height); //四边红外
-
-            TextBlockShowCalculatedMultiplier.Text = (5 / (value * 1.1)).ToString();
-        }
-
-        private void ToggleSwitchEraserBindTouchMultiplier_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchEraserBindTouchMultiplier_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Advanced.EraserBindTouchMultiplier = ToggleSwitchEraserBindTouchMultiplier.IsOn;
+            Settings.Advanced.EraserBindTouchMultiplier = BorderSettings.ToggleSwitchEraserBindTouchMultiplier.IsOn;
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchIsQuadIR_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchIsQuadIR_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Advanced.IsQuadIR = ToggleSwitchIsQuadIR.IsOn;
+            Settings.Advanced.IsQuadIR = BorderSettings.ToggleSwitchIsQuadIR.IsOn;
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchIsLogEnabled_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchIsLogEnabled_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Advanced.IsLogEnabled = ToggleSwitchIsLogEnabled.IsOn;
+            Settings.Advanced.IsLogEnabled = BorderSettings.ToggleSwitchIsLogEnabled.IsOn;
             SaveSettingsToFile();
         }
 
-        private void ToggleSwitchDisableEdgeGesture_Toggled(object sender, RoutedEventArgs e)
+        internal void ToggleSwitchDisableEdgeGesture_Toggled(object sender, RoutedEventArgs e)
         {
             if (!isLoaded) return;
-            Settings.Advanced.DisableEdgeGesture = ToggleSwitchDisableEdgeGesture.IsOn;
+            Settings.Advanced.DisableEdgeGesture = BorderSettings.ToggleSwitchDisableEdgeGesture.IsOn;
             EdgeGesturesUtils.DisableEdgeGestures(new WindowInteropHelper(this).Handle,
                 Settings.Advanced.DisableEdgeGesture && Main_Grid.Background != Brushes.Transparent);
             SaveSettingsToFile();
@@ -1802,14 +1710,13 @@ namespace InkCanvasPlus
 
         #endregion
 
+        /// <summary>
+        /// Debounced persist via SettingsStore.ScheduleSave. Last toggle wins;
+        /// Window_Closing / BtnExit / unhandled exception Flush write immediately.
+        /// </summary>
         public static void SaveSettingsToFile()
         {
-            string text = JsonConvert.SerializeObject(Settings, Formatting.Indented);
-            try
-            {
-                File.WriteAllText(App.RootPath + settingsFileName, text);
-            }
-            catch { }
+            AppSettingsStore.ScheduleSave();
         }
 
         private void SaveFloatBarPositionToFile()
@@ -1820,28 +1727,11 @@ namespace InkCanvasPlus
                     ViewboxFloatingBar.Margin.Left.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                     ViewboxFloatingBar.Margin.Top.ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
-            catch { }
-        }
-
-        private void SCManipulationBoundaryFeedback(object sender, ManipulationBoundaryFeedbackEventArgs e)
-        {
-            e.Handled = true;
-        }
-
-        private void HyperlinkWebsite_Click(object sender, RoutedEventArgs e)
-        {
-            Process.Start("https://cloveryan.com/apps/Ink-Canvas-Plus");
-        }
-
-        private void HyperlinkQQGroup_Click(object sender, RoutedEventArgs e)
-        {
-            FlyoutQQGroup.Hide();
-            Process.Start("https://qm.qq.com/q/I6OCRh38oU");
-        }
-
-        private void HyperlinkSource_Click(object sender, RoutedEventArgs e)
-        {
-            Process.Start("https://github.com/clover-yan/Ink-Canvas-Plus");
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("SaveFloatBarPosition", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
         }
 
         #endregion

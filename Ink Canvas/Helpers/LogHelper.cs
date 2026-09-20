@@ -7,6 +7,8 @@ namespace InkCanvasPlus.Helpers
     {
         public static string LogFile = "Log.txt";
 
+        private static readonly object LogFileLock = new object();
+
         public static void NewLog(string str)
         {
             WriteLogToFile(str, LogType.Info);
@@ -14,7 +16,8 @@ namespace InkCanvasPlus.Helpers
 
         public static void NewLog(Exception ex)
         {
-
+            if (ex == null) return;
+            WriteLogToFile(ex.ToString(), LogType.Error);
         }
 
         public static void WriteLogToFile(string str, LogType logType = LogType.Info)
@@ -34,14 +37,18 @@ namespace InkCanvasPlus.Helpers
             }
             try
             {
-                var file = App.RootPath + LogFile;
-                if (!Directory.Exists(App.RootPath))
+                lock (LogFileLock)
                 {
-                    Directory.CreateDirectory(App.RootPath);
+                    var file = App.RootPath + LogFile;
+                    if (!Directory.Exists(App.RootPath))
+                    {
+                        Directory.CreateDirectory(App.RootPath);
+                    }
+                    using (StreamWriter sw = new StreamWriter(file, true))
+                    {
+                        sw.WriteLine(string.Format("{0} [{1}] {2}", DateTime.Now.ToString("O"), strLogType, str));
+                    }
                 }
-                StreamWriter sw = new StreamWriter(file, true);
-                sw.WriteLine(string.Format("{0} [{1}] {2}", DateTime.Now.ToString("O"), strLogType, str));
-                sw.Close();
             }
             catch { }
         }

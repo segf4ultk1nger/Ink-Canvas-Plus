@@ -6,6 +6,7 @@
         xmlns:ui="http://schemas.inkore.net/lib/ui/wpf/modern"
         xmlns:helpers="clr-namespace:InkCanvasPlus.Helpers"
         xmlns:controls="clr-namespace:InkCanvasPlus.Controls"
+        xmlns:local="clr-namespace:InkCanvasPlus"
         mc:Ignorable="d"
         AllowsTransparency="True"
         WindowStyle="None"
@@ -428,510 +429,17 @@
             </ui:SimpleStackPanel>
         </Grid>
 
-        <Border Name="BorderSettings" Background="White" BorderBrush="Black"
-                BorderThickness="1" CornerRadius="10" ui:ThemeManager.RequestedTheme="Light"
+        <local:SettingsView x:Name="BorderSettings"
                 Width="400" HorizontalAlignment="Center"
-                Margin="0,80,0,120" Visibility="Visible">
-            <Grid>
-                <ui:ScrollViewerEx Margin="0,60,0,50" VerticalScrollBarVisibility="Auto"
-                                   PanningMode="VerticalOnly" ui:ThemeManager.RequestedTheme="Light"
-                                   ManipulationBoundaryFeedback="SCManipulationBoundaryFeedback">
-                    <StackPanel Margin="20,0,10,20">
-                        <TextBlock FontSize="14" Margin="0,0,0,10"
-                                   Text="* 设置将自动保存" />
-                        <GroupBox>
-                            <GroupBox.Header>
-                                <Grid Height="36">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="关于" FontSize="20"/>
-                                    <ui:SimpleStackPanel Margin="0,0,4,0" Grid.Column="1" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8">
-                                        <Button Click="HyperlinkSource_Click">
-                                            <Canvas Width="24" Height="24" Background="Transparent">
-                                                <Canvas.LayoutTransform>
-                                                    <MatrixTransform Matrix="Identity" />
-                                                </Canvas.LayoutTransform>
-                                                <Path Data="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"
-                                                      Stroke="{x:Null}"
-                                                      Fill="#FF000000"
-                                                      Stretch="Uniform"
-                                                      Width="24"
-                                                      Height="24"
-                                                      SnapsToDevicePixels="False"
-                                                      UseLayoutRounding="False"
-                                                      StrokeThickness="0"
-                                                      StrokeStartLineCap="flat"
-                                                      StrokeEndLineCap="flat"
-                                                      StrokeLineJoin="miter"/>
-                                            </Canvas>
-                                        </Button>
-                                        <Button>
-                                            <Canvas Width="24" Height="24" Background="Transparent">
-                                                <Canvas.LayoutTransform>
-                                                    <MatrixTransform Matrix="Identity" />
-                                                </Canvas.LayoutTransform>
-                                                <Path Data="M433.754 420.445c-11.526 1.393-44.86-52.741-44.86-52.741 0 31.345-16.136 72.247-51.051 101.786 16.842 5.192 54.843 19.167 45.803 34.421-7.316 12.343-125.51 7.881-159.632 4.037-34.122 3.844-152.316 8.306-159.632-4.037-9.045-15.25 28.918-29.214 45.783-34.415-34.92-29.539-51.059-70.445-51.059-101.792 0 0-33.334 54.134-44.859 52.741-5.37-.65-12.424-29.644 9.347-99.704 10.261-33.024 21.995-60.478 40.144-105.779C60.683 98.063 108.982.006 224 0c113.737.006 163.156 96.133 160.264 214.963 18.118 45.223 29.912 72.85 40.144 105.778 21.768 70.06 14.716 99.053 9.346 99.704z"
-                                                      Stroke="{x:Null}"
-                                                      Fill="#FF000000"
-                                                      Stretch="Uniform"
-                                                      Width="24"
-                                                      Height="24"
-                                                      SnapsToDevicePixels="False"
-                                                      UseLayoutRounding="False"
-                                                      StrokeThickness="0"
-                                                      StrokeStartLineCap="flat"
-                                                      StrokeEndLineCap="flat"
-                                                      StrokeLineJoin="miter"/>
-                                            </Canvas>
-                                            <ui:FlyoutService.Flyout>
-                                                <ui:Flyout x:Name="FlyoutQQGroup" Placement="Bottom">
-                                                    <StackPanel>
-                                                        <TextBox
-                                                            Margin="0,0,0,12"
-                                                            Background="Transparent"
-                                                            BorderThickness="0"
-                                                            IsReadOnly="True"
-                                                            TextWrapping="Wrap"
-                                                            Text="群号: 996760298" />
-                                                        <Button Content="跳转到 QQ" Click="HyperlinkQQGroup_Click" />
-                                                    </StackPanel>
-                                                </ui:Flyout>
-                                            </ui:FlyoutService.Flyout>
-                                        </Button>
-                                        <Button>
-                                            <Canvas MouseDown="HyperlinkWebsite_Click" Width="24" Height="24" Background="Transparent">
-                                                <Canvas.LayoutTransform>
-                                                    <MatrixTransform Matrix="Identity" />
-                                                </Canvas.LayoutTransform>
-                                                <Path Data="M16.36,14C16.44,13.34 16.5,12.68 16.5,12C16.5,11.32 16.44,10.66 16.36,10H19.74C19.9,10.64 20,11.31 20,12C20,12.69 19.9,13.36 19.74,14M14.59,19.56C15.19,18.45 15.65,17.25 15.97,16H18.92C17.96,17.65 16.43,18.93 14.59,19.56M14.34,14H9.66C9.56,13.34 9.5,12.68 9.5,12C9.5,11.32 9.56,10.65 9.66,10H14.34C14.43,10.65 14.5,11.32 14.5,12C14.5,12.68 14.43,13.34 14.34,14M12,19.96C11.17,18.76 10.5,17.43 10.09,16H13.91C13.5,17.43 12.83,18.76 12,19.96M8,8H5.08C6.03,6.34 7.57,5.06 9.4,4.44C8.8,5.55 8.35,6.75 8,8M5.08,16H8C8.35,17.25 8.8,18.45 9.4,19.56C7.57,18.93 6.03,17.65 5.08,16M4.26,14C4.1,13.36 4,12.69 4,12C4,11.31 4.1,10.64 4.26,10H7.64C7.56,10.66 7.5,11.32 7.5,12C7.5,12.68 7.56,13.34 7.64,14M12,4.03C12.83,5.23 13.5,6.57 13.91,8H10.09C10.5,6.57 11.17,5.23 12,4.03M18.92,8H15.97C15.65,6.75 15.19,5.55 14.59,4.44C16.43,5.07 17.96,6.34 18.92,8M12,2C6.47,2 2,6.5 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"
-                                                      Stroke="{x:Null}"
-                                                      Fill="#FF000000"
-                                                      Stretch="Uniform"
-                                                      Width="24"
-                                                      Height="24"
-                                                      SnapsToDevicePixels="False"
-                                                      UseLayoutRounding="False"
-                                                      StrokeThickness="0"
-                                                      StrokeStartLineCap="flat"
-                                                      StrokeEndLineCap="flat"
-                                                      StrokeLineJoin="miter"/>
-                                            </Canvas>
-                                        </Button>
-                                    </ui:SimpleStackPanel>
-                                </Grid>
-                            </GroupBox.Header>
-                            <ui:SimpleStackPanel Spacing="12">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                </Grid>
-                                <StackPanel Orientation="Vertical" Margin="0,-12,0,0">
-                                    <Grid HorizontalAlignment="Center">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <Ellipse Grid.Column="0" Grid.Row="0" Width="60" Height="60" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="2">
-                                            <Ellipse.Fill>
-                                                <ImageBrush Stretch="UniformToFill">
-                                                    <ImageBrush.ImageSource>
-                                                        <BitmapImage UriSource="pack://application:,,,/Resources/Clover Yan.png" DecodePixelWidth="120" DecodePixelHeight="120" />
-                                                    </ImageBrush.ImageSource>
-                                                </ImageBrush>
-                                            </Ellipse.Fill>
-                                        </Ellipse>
-                                        <Image Grid.Column="1" Grid.Row="0" Width="64" Height="64" Stretch="Uniform">
-                                            <Image.Source>
-                                                <BitmapImage DecodePixelWidth="128" DecodePixelHeight="128" UriSource="pack://application:,,,/Resources/InkCanvas.png" />
-                                            </Image.Source>
-                                        </Image>
-                                    </Grid>
-                                    <TextBlock HorizontalAlignment="Center" FontWeight="Bold" FontSize="20" Text="Ink Canvas Plus" />
-                                    <TextBlock HorizontalAlignment="Center" FontSize="14" Text="Ink Canvas 的浴火重生版" />
-                                    <TextBlock Grid.Column="1" Grid.Row="0" FontSize="14" TextWrapping="Wrap" TextAlignment="Center" Opacity="0.65" Margin="0,12,0,0">
-                                        <Bold>Ink Canvas Plus</Bold> 是一款由 Clover Yan 维护、复刻自 WXRIW/Ink Canvas 的 Windows 画板应用，旨在优化和修复原项目各方面的使用体验，并尽可能地保留原版 Ink Canvas 的操作体验。
-                                    </TextBlock>
-                                </StackPanel>
-                                <StackPanel Orientation="Vertical">
-                                    <ui:SimpleStackPanel Name="AssemblyVersionInfoPanel" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="4" Margin="0,0,0,6">
-                                        <TextBlock FontSize="14">
-                                            <Bold>当前版本:</Bold>
-                                        </TextBlock>
-                                        <TextBlock FontSize="14" Text="" Name="TextBlockVersion" />
-                                    </ui:SimpleStackPanel>
-                                    <StackPanel Name="CheckingUpdatesTip" Visibility="Collapsed" d:Visibility="Visible" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,6">
-                                        <Canvas Width="16" Height="16">
-                                            <Canvas.RenderTransform>
-                                                <RotateTransform CenterX="8" CenterY="8" />
-                                            </Canvas.RenderTransform>
-                                            <Canvas.Triggers>
-                                                <EventTrigger RoutedEvent="Loaded">
-                                                    <BeginStoryboard>
-                                                        <Storyboard>
-                                                            <DoubleAnimation
-                                                                Storyboard.TargetProperty="(Canvas.RenderTransform).(RotateTransform.Angle)" From="0"
-                                                                To="-360" Duration="0:0:1" RepeatBehavior="Forever" />
-                                                        </Storyboard>
-                                                    </BeginStoryboard>
-                                                </EventTrigger>
-                                            </Canvas.Triggers>
-                                            <Path Data="M12,4V2A10,10 0 0,0 2,12H4A8,8 0 0,1 12,4Z"
-                                                  Stroke="{x:Null}"
-                                                  Fill="#FF000000"
-                                                  Stretch="Uniform"
-                                                  Width="8"
-                                                  Height="8"
-                                                  SnapsToDevicePixels="False"
-                                                  UseLayoutRounding="False"
-                                                  StrokeThickness="0"
-                                                  StrokeStartLineCap="flat"
-                                                  StrokeEndLineCap="flat"
-                                                  StrokeLineJoin="miter"/>
-                                        </Canvas>
-                                        <TextBlock Margin="8,0,0,0" FontSize="14" Text="少安毋躁，正在检查更新…" />
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <Button Name="BtnLearnMore" Content="了解此版本" Width="100" FontFamily="Microsoft YaHei UI" Click="BtnLearnMore_Click" Margin="5" />
-                                        <Button Name="BtnCheckForUpdate" Content="检查更新" Width="100" FontFamily="Microsoft YaHei UI" Click="BtnCheckForUpdate_Click" Margin="5" />
-                                    </StackPanel>
-                                </StackPanel>
-                                <ui:SimpleStackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="4">
-                                    <Canvas Width="20" Height="20">
-                                        <Canvas.LayoutTransform>
-                                            <MatrixTransform Matrix="1,0,0,-1,0,0" />
-                                        </Canvas.LayoutTransform>
-                                        <Path Data="M477.5 957.2916666666666C311.25 950.5 159.3333333333333 849.75 86.875 698.25C63.5 649.375 49.5416666666667 599.5416666666667 43.5833333333333 543.75C41.625 525.25 41.625 474.75 43.5833333333333 456.25C49.5416666666667 400.4583333333334 63.5 350.625 86.875 301.7500000000001C150.2083333333333 169.2916666666666 274.625 74.6250000000001 419.25 48.8333333333334C447.5 43.7916666666666 466.9583333333333 42.1666666666667 500 42.1666666666667C533.0416666666666 42.1666666666667 552.5 43.7916666666666 580.75 48.8333333333334C724.9583333333334 74.5833333333334 849.5 169.1250000000001 912.7916666666666 301C968.2916666666666 416.5833333333334 973.25 546.8333333333334 926.7083333333331 667.25C885.4999999999999 773.7916666666666 800.75 864.8333333333334 697.2916666666666 913.5833333333334C626.9166666666666 946.75 557.5 960.5416666666666 477.5 957.2916666666666M546.875 872C649.375 858.5833333333334 739 806.0833333333334 801.2916666666667 723C839.9166666666666 671.4583333333334 864.5 608.9583333333334 872.75 541.25C874.7916666666666 524.3333333333334 874.7916666666666 475.6666666666667 872.75 458.75C864.3333333333333 389.6250000000001 839.3333333333333 326.9166666666668 799.2499999999999 274.2083333333334C789.2083333333333 261.0416666666668 780.9166666666666 251.2500000000001 779.8333333333334 251.2500000000001C779.3749999999999 251.2500000000001 778.625 252.7916666666668 778.1666666666665 254.7083333333334C776.3333333333334 262.1250000000001 765.9166666666666 287.125 759.2083333333333 300.2083333333333C734.0833333333333 349.2916666666667 691.5 393.7083333333334 644.375 420C640.25 422.2916666666668 636.625 424.375 636.3333333333333 424.5833333333334C636.0416666666666 424.8333333333334 640.9583333333333 430.25 647.25 436.5833333333334C680 469.6250000000001 699.2916666666666 508.1250000000001 706.3333333333334 554.375C708.2916666666666 567.125 708.2916666666666 598.875 706.3749999999999 611.875C695.6666666666667 684.2916666666667 648.5 746.1666666666667 582.5 774.25C553.5416666666666 786.5833333333334 533.4166666666666 790.5833333333334 500 790.5833333333334C466.5833333333333 790.5833333333334 446.4583333333333 786.5833333333334 417.5 774.25C351.3333333333333 746.0833333333334 304.375 684.5416666666667 293.625 611.875C291.7083333333333 598.875 291.7083333333333 567.125 293.6666666666667 554.375C300.7083333333333 508.1250000000001 320 469.6250000000001 352.75 436.5833333333334C359.0416666666667 430.25 363.9583333333333 424.8333333333334 363.6666666666667 424.5833333333334C363.375 424.375 359.75 422.2916666666668 355.625 420C308.5 393.7083333333334 265.9166666666667 349.2916666666667 240.7916666666667 300.2083333333333C234.0833333333334 287.0833333333334 223.6666666666667 262.1250000000001 221.8333333333333 254.6250000000001C221.3333333333334 252.7083333333335 220.4583333333334 251.2916666666667 219.875 251.5000000000001C216.1666666666666 252.7916666666668 191.4166666666667 285.8750000000001 179.5833333333333 305.3333333333334C151.6666666666667 351.2916666666667 134.0833333333333 402.9166666666668 127.25 458.75C125.2083333333333 475.6666666666667 125.2083333333333 524.3333333333334 127.25 541.25C140.2083333333334 647.3333333333333 192.2083333333334 737.7083333333334 277 801.2916666666667C328.375 839.8333333333334 395.4583333333333 866.1666666666666 458.1249999999999 872.4166666666667C465.7083333333333 873.1666666666666 473.8333333333333 874 476.2499999999999 874.2916666666666C485.125 875.2916666666667 533.5416666666666 873.75 546.875 872M514.4166666666666 706.9583333333333C552.75 704.25 591.875 677.25 611.0416666666666 640.1666666666667C631.4166666666666 600.9166666666667 628.6666666666666 551.5416666666667 604.125 514.5833333333334C589.5 492.6250000000001 567.3333333333333 474.9166666666666 543.75 466.4166666666667C525.5416666666666 459.8750000000001 522.75 459.4166666666667 500 459.4166666666667C477.25 459.4166666666667 474.4583333333333 459.8750000000001 456.2499999999999 466.4166666666667C419.0833333333333 479.8333333333334 389.2083333333333 513.0833333333334 379.3333333333333 552C362.3333333333333 619 401.9166666666667 686.4583333333333 468.75 704.25C476.7083333333333 706.375 496.9583333333333 708.6666666666667 501.8749999999999 708C503.2499999999999 707.7916666666667 508.8749999999999 707.3333333333334 514.4166666666666 706.9583333333333M531.875 372.3333333333334C591.375 363.5 644.7916666666666 327.8333333333333 677.5 275.0833333333334C692.4166666666665 251.0833333333334 702.2083333333334 223.2083333333334 706.6666666666666 192.2083333333334C707.4583333333333 186.6666666666668 707.625 186.7916666666668 685.4166666666666 174.0833333333334C646.125 151.5833333333335 599.875 135.75 552.5 128.5416666666668C526.1666666666666 124.5416666666668 473.8333333333333 124.5416666666668 447.5 128.5416666666668C400.125 135.75 353.875 151.5833333333335 314.5833333333333 174.0833333333334C292.375 186.7916666666668 292.5416666666667 186.6666666666668 293.3333333333333 192.2083333333334C300.4583333333333 241.625 320.75 282.1666666666667 355.2083333333333 315.75C391.0416666666667 350.7083333333334 433.4166666666667 369.7916666666668 485 374.25C493.4583333333333 374.9583333333334 521.9583333333333 373.8333333333334 531.875 372.3333333333334"
-                                          Stroke="{x:Null}"
-                                          Fill="#FF000000"
-                                          Stretch="Uniform"
-                                          Width="20"
-                                          Height="20"
-                                          SnapsToDevicePixels="False"
-                                          UseLayoutRounding="False"
-                                          StrokeThickness="0"
-                                          StrokeStartLineCap="flat"
-                                          StrokeEndLineCap="flat"
-                                          StrokeLineJoin="miter" />
-                                    </Canvas>
-                                    <TextBlock FontSize="15">
-                                        <Bold>开发者:</Bold> Clover Yan, XY Wang (WXRIW)
-                                    </TextBlock>
-                                </ui:SimpleStackPanel>
-                                <TextBlock FontSize="14" TextWrapping="Wrap">
-                                    <Bold>贡献者:</Bold> Kengwang, Raspberry Kan, jiajiaxd, CN-Ironegg, Clover Yan, STBBRD, ChangSakura, Dubi906w
-                                </TextBlock>
-                                <TextBlock FontSize="14">
-                                    <Bold>开源协议:</Bold> GNU General Public License v3.0
-                                </TextBlock>
-                                <!--<StackPanel>
-                                    <ui:SimpleStackPanel Orientation="Horizontal" Spacing="12">
-                                        <Button Content="检查更新" Width="100" FontFamily="Microsoft YaHei UI" Click="BtnCheckForUpdate_Click" Margin="0,0,0,10" />
-                                        <ui:SymbolIcon Name="SymbolIconCheckForUpdateComplete" Symbol="Accept" Visibility="Collapsed" />
-                                    </ui:SimpleStackPanel>
-                                </StackPanel>-->
-                            </ui:SimpleStackPanel>
-                        </GroupBox>
-                        <GroupBox Header="行为">
-                            <ui:SimpleStackPanel Spacing="12">
-                                <Grid HorizontalAlignment="Stretch">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Button Grid.Column="0" Content="重启应用" HorizontalAlignment="Stretch" FontFamily="Microsoft YaHei UI" Click="BtnRestart_Click" Margin="0,0,5,0" />
-                                    <Button Grid.Column="1" Content="重置配置" Foreground="Red" HorizontalAlignment="Stretch" FontFamily="Microsoft YaHei UI" Margin="5,0,5,0">
-                                        <ui:FlyoutService.Flyout>
-                                            <ui:Flyout x:Name="FlyoutResetToDefault" Placement="Bottom">
-                                                <StackPanel>
-                                                    <TextBlock
-                                                            Margin="0,0,0,12"
-                                                            Text="确定要重置所有配置吗？此操作无法撤销。" />
-                                                    <Button Content="重置所有配置" Foreground="White" Background="Red" FontFamily="Microsoft YaHei UI" Click="BtnResetToDefault_Click" />
-                                                </StackPanel>
-                                            </ui:Flyout>
-                                        </ui:FlyoutService.Flyout>
-                                    </Button>
-                                    <Button Grid.Column="2" Content="退出应用" HorizontalAlignment="Stretch" FontFamily="Microsoft YaHei UI" Click="BtnExit_Click" Margin="5,0,0,0" />
-                                </Grid>
-                                <ui:ToggleSwitch Name="ToggleSwitchRunAtStartup" Header="开机时运行" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchRunAtStartup_Toggled" />
-                            </ui:SimpleStackPanel>
-                        </GroupBox>
-                        <GroupBox Header="启动">
-                            <ui:SimpleStackPanel Spacing="12">
-                                <ui:ToggleSwitch Name="ToggleSwitchAutoHideCanvas" Header="启动时不自动进入批注模式" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchAutoHideCanvas_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchAutoEnterModeFinger" Header="自动进入手指模式" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchAutoEnterModeFinger_Toggled" />
-                            </ui:SimpleStackPanel>
-                        </GroupBox>
-                        <GroupBox Header="画板">
-                            <ui:SimpleStackPanel Spacing="12">
-                                <Button Name="BtnColorConfig" Content="配置画笔颜色…" FontFamily="Microsoft YaHei UI" Click="BtnColorConfig_Click" />
-                                <StackPanel Orientation="Horizontal">
-                                    <Slider x:Name="InkWidthSlider"
-                                            HorizontalAlignment="Left"
-                                            Minimum="1" Maximum="20"
-                                            Width="330" FontFamily="Microsoft YaHei UI"
-                                            ui:ControlHelper.Header="画笔粗细"
-                                            IsSnapToTickEnabled="True" Value="5"
-                                            TickFrequency="1" TickPlacement="Both"
-                                            ValueChanged="InkWidthSlider_ValueChanged" />
-                                    <TextBlock Text="{Binding Value, ElementName=InkWidthSlider, Mode=OneWay}"
-                                               VerticalAlignment="Bottom" Margin="10,0,0,8"
-                                               FontSize="14" />
-                                </StackPanel>
-                                <ui:ToggleSwitch Name="ToggleSwitchShowCursor" Header="显示画笔光标" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchShowCursor_Toggled" />
-                                <TextBlock Text="画笔样式" FontFamily="Microsoft YaHei UI" FontSize="14" />
-                                <ComboBox Name="ComboBoxPenStyle" FontFamily="Microsoft YaHei UI" SelectedIndex="0" SelectionChanged="ComboBoxPenStyle_SelectionChanged">
-                                    <ComboBoxItem Content="模拟笔锋（根据墨迹尾部计算）" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="模拟笔锋（根据速度计算）" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="无笔锋" FontFamily="Microsoft YaHei UI" />
-                                </ComboBox>
-                                <ui:ToggleSwitch Header="手指模式" IsOn="{Binding ElementName=ToggleSwitchModeFinger, Path=IsOn}" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" />
-                                <TextBlock Text="此选项仅适用于可获取触摸面积的屏幕" TextWrapping="Wrap" Foreground="#666666" />
-                                <TextBlock Text="橡皮模式" FontFamily="Microsoft YaHei UI" FontSize="14" />
-                                <ComboBox Name="ComboBoxEraserType" FontFamily="Microsoft YaHei UI" SelectedIndex="0" SelectionChanged="ComboBoxEraserType_OnSelectionChanged">
-                                    <ComboBoxItem Content="交替切换" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="面积擦" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="笔画擦" FontFamily="Microsoft YaHei UI" />
-                                </ComboBox>
-                                <TextBlock Text="橡皮大小" FontFamily="Microsoft YaHei UI" FontSize="14" />
-                                <ComboBox Name="ComboBoxEraserSize" FontFamily="Microsoft YaHei UI" SelectedIndex="0" SelectionChanged="ComboBoxEraserSize_SelectionChanged">
-                                    <ComboBoxItem Content="极小" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="很小" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="小（默认）" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="较小" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="中" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="较大" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="大" FontFamily="Microsoft YaHei UI" />
-                                </ComboBox>
-                                <ui:ToggleSwitch Name="ToggleSwitchHideStrokeWhenSelecting" Header="退出画板模式后隐藏墨迹" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchHideStrokeWhenSelecting_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchUsingWhiteboard" Header="使用白板 (白色背景)" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchUsingWhiteboard_Toggled" />
-                                <TextBlock Text="保留双曲线渐近线" FontFamily="Microsoft YaHei UI" FontSize="14" />
-                                <ComboBox Name="ComboBoxHyperbolaAsymptoteOption" FontFamily="Microsoft YaHei UI" SelectedIndex="2" SelectionChanged="ComboBoxHyperbolaAsymptoteOption_SelectionChanged">
-                                    <ComboBoxItem Content="是" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="否" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="每次询问" FontFamily="Microsoft YaHei UI" />
-                                </ComboBox>
-                            </ui:SimpleStackPanel>
-                        </GroupBox>
-                        <GroupBox Header="手势">
-                            <ui:SimpleStackPanel Spacing="12">
-                                <ui:ToggleSwitch Name="ToggleSwitchDisableLockSmithByDefault" Header="默认启用双指手势" FontFamily="Microsoft YaHei UI" IsOn="True" OnContent="开" OffContent="关" Toggled="ToggleSwitchDisableLockSmithByDefault_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchEnableTwoFingerZoom" Header="允许双指缩放" FontFamily="Microsoft YaHei UI" IsOn="True" OnContent="开" OffContent="关" Toggled="ToggleSwitchEnableTwoFingerZoom_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchEnableTwoFingerTranslate" Header="允许双指移动" FontFamily="Microsoft YaHei UI" IsOn="True" OnContent="开" OffContent="关" Toggled="ToggleSwitchEnableTwoFingerTranslate_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchEnableTwoFingerRotation" Header="允许双指旋转" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchEnableTwoFingerRotation_Toggled" />
-                                <TextBlock Text="允许选中墨迹后对墨迹进行双指或多指缩放操作（此设置不受“允许双指旋转”设置的影响）" TextWrapping="Wrap" Foreground="#666666" />
-                                <ui:ToggleSwitch Name="ToggleSwitchEnableTwoFingerRotationOnSelection" Header="允许双指旋转选中的墨迹" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchEnableTwoFingerRotation_Toggled" />
-                            </ui:SimpleStackPanel>
-                        </GroupBox>
-                        <GroupBox Name="GroupBoxInkRecognition" Header="墨迹识别 (Beta)">
-                            <ui:SimpleStackPanel Spacing="12">
-                                <TextBlock Text="墨迹识别功能目前处于开发阶段，目前可实现智能识别圆、三角形、&#x000A;矩形，并自动转换为规范图形。" Foreground="#666666" />
-                                <ui:ToggleSwitch Name="ToggleSwitchEnableInkToShape" Header="启用墨迹识别" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchEnableInkToShape_Toggled" IsOn="True" />
-                                <StackPanel Orientation="Horizontal">
-                                    <Slider x:Name="LineNormalizationThresholdSlider"
-                                            HorizontalAlignment="Left"
-                                            Minimum="0.0" Maximum="1.0"
-                                            Width="310" FontFamily="Microsoft YaHei UI"
-                                            ui:ControlHelper.Header="直线规范化阈值"
-                                            IsSnapToTickEnabled="True" Value="0.5"
-                                            TickFrequency="0.05" TickPlacement="Both"
-                                            ValueChanged="LineNormalizationThresholdSlider_ValueChanged" />
-                                    <TextBlock Text="{Binding Value, ElementName=LineNormalizationThresholdSlider, Mode=OneWay}"
-                                               VerticalAlignment="Bottom" Margin="10,0,0,8"
-                                               FontSize="14" Width="35" HorizontalAlignment="Center" />
-                                </StackPanel>
-                            </ui:SimpleStackPanel>
-                        </GroupBox>
-                        <GroupBox Name="GroupBoxAppearance" Header="外观">
-                            <ui:SimpleStackPanel Spacing="12">
-                                <ui:ToggleSwitch Name="ToggleSwitchTransparentButtonBackground" Header="按钮背景半透明" IsOn="True" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchTransparentButtonBackground_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchShowButtonExit" Header="显示“退出”按钮" IsOn="True" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchShowButtonExit_Toggled" />
-                                <Button Content="立即退出" Width="120" Visibility="Collapsed" FontFamily="Microsoft YaHei UI" Click="BtnExit_Click" Margin="0,0,0,10" />
-                                <ui:ToggleSwitch Name="ToggleSwitchShowButtonEraser" Header="显示“橡皮”按钮" IsOn="True" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchShowButtonEraser_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchShowButtonHideControl" Header="显示“⇅ (显示或隐藏控制按钮)”按钮" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchShowButtonHideControl_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchShowButtonLRSwitch" Header="显示“⇆ (左右切换)”按钮" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchShowButtonLRSwitch_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchShowButtonModeFinger" Header="显示“手指模式”切换按钮" IsOn="True" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchShowButtonModeFinger_Toggled" />
-                                <StackPanel Visibility="Collapsed" Orientation="Horizontal">
-                                    <Slider x:Name="SideControlOpacitySlider"
-                                            HorizontalAlignment="Left"
-                                            Minimum="1" Maximum="100"
-                                            Width="320" FontFamily="Microsoft YaHei UI"
-                                            ui:ControlHelper.Header="控制栏透明度"
-                                            IsSnapToTickEnabled="True" Value="100"
-                                            TickFrequency="10" TickPlacement="Both"
-                                            ValueChanged="SideControlOpacitySlider_ValueChanged" />
-                                    <TextBlock Text="{Binding Value, ElementName=SideControlOpacitySlider, Mode=OneWay}"
-                                               VerticalAlignment="Bottom" Margin="10,0,0,8"
-                                               FontSize="14" Width="25" HorizontalAlignment="Center" />
-                                </StackPanel>
-                            </ui:SimpleStackPanel>
-                        </GroupBox>
-                        <GroupBox Name="GroupBoxAppearanceNewUI" Header="外观">
-                            <ui:SimpleStackPanel Spacing="12">
-                                <ui:ToggleSwitch Name="ToggleSwitchAutoCollapseFloatBar" Header="自动折叠浮动栏" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchAutoCollapseFloatBar_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchFloatBarShowOnRight" Header="浮动栏显示在右侧" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchFloatBarShowOnRight_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchRememberFloatBarPosition" Header="记忆浮动栏位置" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchRememberFloatBarPosition_Toggled" />
-                                <ui:ToggleSwitch Header="显示“橡皮”按钮" IsOn="{Binding ElementName=ToggleSwitchShowButtonEraser, Path=IsOn}" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" />
-                                <ui:ToggleSwitch Name="ToggleSwitchShowButtonPPTNavigation" Header="显示水平 PPT 导航按钮" IsOn="True" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchShowButtonPPTNavigation_OnToggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchShowVerticalPPTNavigation" Header="显示垂直 PPT 导航按钮" IsOn="True" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchShowVerticalPPTNavigation_OnToggled" />
-                                <TextBlock Text="颜色主题" FontFamily="Microsoft YaHei UI" FontSize="14" />
-                                <ComboBox Name="ComboBoxTheme" FontFamily="Microsoft YaHei UI" SelectedIndex="0" SelectionChanged="ComboBoxTheme_SelectionChanged">
-                                    <ComboBoxItem Content="浅色（经典）" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="深色" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="跟随系统" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 苜蓿绿 - 浅色" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 苜蓿绿 - 深色" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 苜蓿绿 - 跟随系统（默认）" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 三月粉 - 浅色" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 三月粉 - 深色" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 三月粉 - 跟随系统" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 朱砂红 - 浅色" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 朱砂红 - 深色" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 朱砂红 - 跟随系统" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 太空蓝 - 浅色" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 太空蓝 - 深色" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 太空蓝 - 跟随系统" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 金秋黄 - 浅色" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 金秋黄 - 深色" FontFamily="Microsoft YaHei UI" />
-                                    <ComboBoxItem Content="Plus 金秋黄 - 跟随系统" FontFamily="Microsoft YaHei UI" />
-                                </ComboBox>
-                                <StackPanel Orientation="Horizontal">
-                                    <Slider x:Name="FloatingBarScaleSlider"
-                                            HorizontalAlignment="Left"
-                                            Minimum="50" Maximum="100"
-                                            Width="320" FontFamily="Microsoft YaHei UI"
-                                            ui:ControlHelper.Header="工具栏图标缩放"
-                                            IsSnapToTickEnabled="True" Value="100"
-                                            TickFrequency="5" TickPlacement="Both"
-                                            ValueChanged="FloatingBarScaleSlider_ValueChanged" />
-                                    <TextBlock Text="{Binding Value, ElementName=FloatingBarScaleSlider, Mode=OneWay}"
-                                               VerticalAlignment="Bottom" Margin="10,0,0,8"
-                                               FontSize="14" Width="25" HorizontalAlignment="Center" />
-                                </StackPanel>
-                            </ui:SimpleStackPanel>
-                        </GroupBox>
-                        <GroupBox Header="PowerPoint 相关">
-                            <ui:SimpleStackPanel Spacing="12">
-                                <TextBlock Text="此部分的设置项将会在幻灯片播放时使用，优先级高于其他设置项" Foreground="#666666" />
-                                <ui:ToggleSwitch Name="ToggleSwitchSupportPowerPoint" Header="Microsoft PowerPoint 支持" IsOn="True" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchSupportPowerPoint_Toggled" />
-                                <TextBlock Text="我们并不推荐使用 WPS Office，因为其对于触摸设备的较差支持。" Foreground="#666666" />
-                                <TextBlock Text="对 WPS Office 支持时会导致 WPS Office 关闭时卡顿，仅测试用。" Margin="0,-12,0,0" Foreground="#666666" />
-                                <ui:ToggleSwitch Name="ToggleSwitchSupportWPS" Header="WPS Office 支持" IsOn="True" IsEnabled="True" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchSupportWPS_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchShowCanvasAtNewSlideShow" Header="开始放映时自动启动画板" IsOn="True" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchShowCanvasAtNewSlideShow_Toggled" />
-                                <TextBlock Text="默认在幻灯片模式下启用双指手势（关闭该选项之后，仍可以通过 LockSmith 钉子图标使用双指手势。）" TextWrapping="Wrap" Foreground="#666666" />
-                                <ui:ToggleSwitch Name="ToggleSwitchEnableTwoFingerGestureInPresentationMode" Header="默认在幻灯片模式下启用双指手势" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchEnableTwoFingerGestureInPresentationMode_Toggled" />
-                                <TextBlock Text="允许开启画板时使用手指手势进行幻灯片翻页（启用后，在幻灯片放映模式下，当画板无墨迹时，使用手指（笔尖或手掌无法识别）左右滑动即可控制幻灯片翻页。）" TextWrapping="Wrap" Foreground="#666666" />
-                                <ui:ToggleSwitch Name="ToggleSwitchEnableFingerGestureSlideShowControl" Header="允许使用手指手势进行幻灯片翻页" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" IsOn="True" Toggled="ToggleSwitchEnableFingerGestureSlideShowControl_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchAutoSaveScreenShotInPowerPoint" Header="自动幻灯片截屏" IsOn="True" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchAutoSaveScreenShotInPowerPoint_Toggled" />
-                                <TextBlock Text="开启后将在结束幻灯片放映时自动将已有墨迹保存至此电脑，并在下次打开时自动加载（文件名和幻灯片页数都要相同）" TextWrapping="Wrap" Foreground="#666666" />
-                                <ui:ToggleSwitch Name="ToggleSwitchAutoSaveStrokesInPowerPoint" Header="自动保存幻灯片墨迹" IsOn="True" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchAutoSaveStrokesInPowerPoint_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchNotifyPreviousPage" Header="记忆并提示上次播放位置" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchNotifyPreviousPage_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchNotifyHiddenPage" Header="提示隐藏幻灯片" IsOn="True" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchNotifyHiddenPage_Toggled" />
-
-                                <ui:ToggleSwitch Name="ToggleSwitchNoStrokeClearInPowerPoint" Header="退出画板模式时不清除笔迹" IsOn="True" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchNoStrokeClearInPowerPoint_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchShowStrokeOnSelectInPowerPoint" Header="退出画板模式时不隐藏笔迹" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchShowStrokeOnSelectInPowerPoint_Toggled" />
-                            </ui:SimpleStackPanel>
-                        </GroupBox>
-
-                        <GroupBox Header="自动">
-                            <ui:SimpleStackPanel Spacing="12">
-                                <ui:ToggleSwitch Name="ToggleSwitchAutoKillPptService" Header="自动查杀“PPT 小工具”" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchAutoKillPptService_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchAutoKillEasiNote" Header="自动查杀“希沃白板 5”悬浮球" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchAutoKillEasiNote_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchSaveScreenshotsInDateFolders" Header="截图分日期文件夹保存" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchSaveScreenshotsInDateFolders_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchAutoSaveStrokesAtScreenshot" Header="截图时自动保存墨迹" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchAutoSaveStrokesAtScreenshot_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchAutoSaveStrokesAtClear" Header="清屏时自动截图" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchAutoSaveStrokesAtClear_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchClearExitingWritingMode" Header="切换到鼠标模式后自动清屏" IsOn="False" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchExitingWritingMode_Toggled" />
-                                <StackPanel Orientation="Horizontal">
-                                    <Slider x:Name="SideControlMinimumAutomationSlider"
-                                            HorizontalAlignment="Left"
-                                            Minimum="0" Maximum="10"
-                                            Width="320" FontFamily="Microsoft YaHei UI"
-                                            ui:ControlHelper.Header="自动截图最小墨迹量"
-                                            IsSnapToTickEnabled="True" Value="0"
-                                            TickFrequency="1" TickPlacement="Both"
-                                            ValueChanged="SideControlMinimumAutomationSlider_ValueChanged" />
-                                    <TextBlock Text="{Binding Value, ElementName=SideControlMinimumAutomationSlider, Mode=OneWay}"
-                                               VerticalAlignment="Bottom" Margin="10,0,0,8"
-                                               FontSize="14" Width="25" HorizontalAlignment="Center" />
-                                </StackPanel>
-                            </ui:SimpleStackPanel>
-                        </GroupBox>
-
-                        <GroupBox Header="高级">
-                            <ui:SimpleStackPanel Spacing="12">
-                                <TextBlock Text="可在手指触摸画板时显示圆形橡皮或手掌触摸画板时显示的橡皮比&#x000A;手掌大很多时调整" Foreground="#666666" />
-                                <ui:ToggleSwitch Name="ToggleSwitchIsSpecialScreen" Header="特殊屏幕模式" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchIsSpecialScreen_OnToggled" />
-                                <StackPanel Orientation="Horizontal" Visibility="{Binding Visibility,ElementName=TouchMultiplierSlider}">
-                                    <Slider x:Name="TouchMultiplierSlider"
-                                            HorizontalAlignment="Left"
-                                            Minimum="0" Maximum="1"
-                                            Width="300" FontFamily="Microsoft YaHei UI"
-                                            ui:ControlHelper.Header="触摸大小倍数"
-                                            IsSnapToTickEnabled="True"
-                                            TickFrequency="0.05" TickPlacement="Both"
-                                            ValueChanged="TouchMultiplierSlider_ValueChanged"
-                                            Visibility="Collapsed" />
-                                    <TextBlock Text="{Binding Value, ElementName=TouchMultiplierSlider, Mode=OneWay}"
-                                               VerticalAlignment="Bottom" Margin="10,0,0,8"
-                                               FontSize="14" Width="30" HorizontalAlignment="Center"
-                                               Visibility="{Binding Path=Visibility, ElementName=TouchMultiplierSlider, Mode=OneWay}" />
-                                </StackPanel>
-
-                                <ui:SimpleStackPanel Spacing="8" Margin="0,4,0,4" Visibility="{Binding Visibility,ElementName=TouchMultiplierSlider}">
-                                    <TextBlock FontSize="14" Text="在下方用笔尖点击以估计触摸大小倍数" />
-                                    <TextBlock Text="数值仅供参考" Foreground="#666666" />
-                                    <Border CornerRadius="4" Height="48" Background="#cccccc" TouchDown="BorderCalculateMultiplier_TouchDown" />
-                                    <TextBlock Name="TextBlockShowCalculatedMultiplier" FontSize="14" />
-                                </ui:SimpleStackPanel>
-
-                                <ui:ToggleSwitch Name="ToggleSwitchEraserBindTouchMultiplier" Header="橡皮擦绑定触摸大小倍数" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" IsOn="False" Toggled="ToggleSwitchEraserBindTouchMultiplier_Toggled" Visibility="{Binding Path=Visibility, ElementName=TouchMultiplierSlider, Mode=OneWay}" />
-                                <ui:ToggleSwitch Name="ToggleSwitchIsQuadIR" Header="四边红外模式" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" Toggled="ToggleSwitchIsQuadIR_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchIsLogEnabled" Header="记录日志" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" IsOn="True" Toggled="ToggleSwitchIsLogEnabled_Toggled" />
-                                <ui:ToggleSwitch Name="ToggleSwitchDisableEdgeGesture" Header="画板模式下禁用触摸屏边缘手势" FontFamily="Microsoft YaHei UI" OnContent="开" OffContent="关" IsOn="True" Toggled="ToggleSwitchDisableEdgeGesture_Toggled" />
-                                <TextBlock TextWrapping="Wrap" Text="开启后可阻止 Windows 10 以上设备在屏幕边缘书写时滑出任务视图、通知中心或操作中心，并缓解书写卡顿的问题（Windows 11 多指多任务手势可以在系统设置中关闭）" Foreground="#666666" />
-                            </ui:SimpleStackPanel>
-                        </GroupBox>
-
-                        <GroupBox Header="快捷键指南">
-                            <TextBlock TextWrapping="Wrap" Text="全局快捷键&#x000A;• Ctrl+Alt+D：激活 Ink Canvas Plus 并切换书写／鼠标模式&#x000A;&#x000A;应用内快捷键&#x000A;• Alt+V：展开或收起工具栏&#x000A;• Alt+D：切换到书写模式&#x000A;• Alt+S：切换到鼠标模式&#x000A;• Alt+`, Alt+1–5：切换画笔颜色&#x000A;• Alt+L：使用直线工具&#x000A;• Alt+R：使用矩形工具&#x000A;• Alt+O：使用圆形工具&#x000A;• Alt+Q：使用套索工具&#x000A;• Alt+E：切换橡皮擦&#x000A;• Ctrl+Z：撤销上一步&#x000A;• Ctrl+Shift+Z, Ctrl+Y：重做&#x000A;• Alt+X：清除选中笔迹／所有笔迹&#x000A;• Alt+C：屏幕截图&#x000A;• B, Alt+B：进入／退出黑板模式&#x000A;• Alt+M：切换荧光笔&#x000A;• Alt+T：切换浮动工具栏位置" />
-                        </GroupBox>
-                    </StackPanel>
-                </ui:ScrollViewerEx>
-                <Grid Background="White" Margin="10,0,10,0" Height="60" VerticalAlignment="Top">
-                    <Grid Margin="10,20,10,-10">
-                        <TextBlock Text="Ink Canvas Plus 设置" FontSize="26" Margin="0,0,0,12" />
-                        <!--<Viewbox Margin="0,-55,0,0" Height="60" HorizontalAlignment="Right">
-                        <StackPanel Orientation="Horizontal">
-                            <Image Source="logo.png" Width="120" />
-                            <Image Source="text.png" Width="200" />
-                        </StackPanel>
-                    </Viewbox>-->
-                    </Grid>
-                </Grid>
-                <Grid VerticalAlignment="Bottom" Height="50">
-                    <Button FontFamily="Microsoft YaHei UI"
-                            Width="120" Margin="10"
-                            HorizontalAlignment="Right"
-                            Content="关闭"
-                            Click="BtnSettings_Click" />
-                </Grid>
-            </Grid>
-        </Border>
-
+                Margin="0,80,0,120" Visibility="Visible"
+                FingerModeIsOn="{Binding ElementName=ToggleSwitchModeFinger, Path=IsOn, Mode=TwoWay}" />
         <Grid Name="GridNotifications" Margin="0,110" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Bottom">
             <Border CornerRadius="25" Height="50" Background="LightGray" Opacity="0.85">
                 <TextBlock Name="TextBlockNotice" Text="测试文本" Margin="20,0" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="16" />
             </Border>
         </Grid>
 
+        <!-- #region Legacy UI (-o) frozen; deletion is a later product PR -->
         <Viewbox Name="ViewBoxStackPanelMain" Visibility="Visible" Margin="10,10,10,55" HorizontalAlignment="Right" VerticalAlignment="Bottom" Width="46">
             <StackPanel Name="StackPanelMain" Width="46">
                 <StackPanel Name="StackPanelControl">
@@ -1078,7 +586,7 @@
                         IsSnapToTickEnabled="True"
                         TickFrequency="1" TickPlacement="Both"
                         RenderTransformOrigin="0.5,0.5"
-                        Value="{Binding ElementName=InkWidthSlider, Path=Value, Mode=TwoWay}">
+                        Value="{Binding ElementName=BorderSettings, Path=HostedInkWidthSlider.Value, Mode=TwoWay}">
                 </Slider>
                 <TextBlock Text="画笔&#x000A;粗细" Foreground="{Binding ElementName=BtnExit, Path=Foreground}"
                            FontSize="14" Margin="0,10,0,0" HorizontalAlignment="Center" />
@@ -1095,7 +603,7 @@
                         </TextBlock>
                     </Grid>
                 </Button>
-                <TextBlock Visibility="Visible" Text="{Binding Value, ElementName=InkWidthSlider, Mode=OneWay}"
+                <TextBlock Visibility="Visible" Text="{Binding ElementName=BorderSettings, Path=HostedInkWidthSlider.Value, Mode=OneWay}"
                            FontSize="14" HorizontalAlignment="Center" Foreground="{Binding ElementName=BtnExit, Path=Foreground}" />
                 <Button Name="BtnPenWidthDecrease" Visibility="Visible" FontFamily="Microsoft YaHei UI"
                         Margin="0,5,0,0" Height="{Binding ElementName=BtnPen, Path=ActualHeight}" Width="{Binding ElementName=StackPanelMain, Path=ActualWidth}"
@@ -1175,6 +683,7 @@
                 <Grid Name="GridForLeftSideReservedSpace" Height="{Binding ElementName=StackPanelInfo, Path=ActualHeight}" />
             </StackPanel>
         </Viewbox>
+        <!-- #endregion Legacy UI (-o) -->
 
         <Grid Name="GridForRecoverOldUI">
             <Grid Visibility="{Binding ElementName=StackPanelPPTControls, Path=Visibility}">
@@ -1530,9 +1039,9 @@
                                                         <Slider HorizontalAlignment="Left"
                                                                 Minimum="1" Maximum="20"
                                                                 Width="102"
-                                                                IsSnapToTickEnabled="True" Value="{Binding ElementName=InkWidthSlider, Path=Value, Mode=TwoWay}"
+                                                                IsSnapToTickEnabled="True" Value="{Binding ElementName=BorderSettings, Path=HostedInkWidthSlider.Value, Mode=TwoWay}"
                                                                 TickFrequency="1" TickPlacement="Both" />
-                                                        <TextBlock Text="{Binding Value, ElementName=InkWidthSlider, Mode=OneWay}"
+                                                        <TextBlock Text="{Binding ElementName=BorderSettings, Path=HostedInkWidthSlider.Value, Mode=OneWay}"
                                                                    Foreground="{DynamicResource FloatBarForeground}"
                                                                    VerticalAlignment="Bottom" Margin="6,0,0,8"
                                                                    Width="15" FontSize="13" />
@@ -1543,7 +1052,7 @@
                                                 <ui:SimpleStackPanel>
                                                     <Label Margin="0,0,0,-2" Content="墨迹识别" Foreground="{DynamicResource FloatBarForeground}" FontSize="13" VerticalAlignment="Center" />
                                                     <Viewbox Height="25">
-                                                        <ui:ToggleSwitch Foreground="{DynamicResource FloatBarForeground}" FontFamily="Microsoft YaHei UI" Width="70" MinWidth="0" OnContent="开" OffContent="关" Toggled="ToggleSwitchEnableInkToShape_Toggled" IsOn="{Binding ElementName=ToggleSwitchEnableInkToShape, Path=IsOn}" />
+                                                        <ui:ToggleSwitch Foreground="{DynamicResource FloatBarForeground}" FontFamily="Microsoft YaHei UI" Width="70" MinWidth="0" OnContent="开" OffContent="关" Toggled="ToggleSwitchEnableInkToShape_Toggled" IsOn="{Binding ElementName=BorderSettings, Path=HostedEnableInkToShapeToggle.IsOn}" />
                                                     </Viewbox>
                                                 </ui:SimpleStackPanel>
                                             </Viewbox>

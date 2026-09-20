@@ -1,7 +1,9 @@
-﻿using System.Windows;
+﻿using System;
+using System.Windows;
 using System.Windows.Ink;
 using System.Windows.Input;
 using System.Windows.Media;
+using InkCanvasPlus.Helpers;
 
 namespace InkCanvasPlus.Helpers
 {
@@ -84,7 +86,11 @@ namespace InkCanvasPlus.Helpers
                     Stroke.Draw(dc);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("StrokeVisual.Redraw", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
         }
 
         private readonly DrawingAttributes _drawingAttributes;

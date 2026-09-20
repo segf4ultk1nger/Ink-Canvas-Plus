@@ -146,8 +146,9 @@ namespace InkCanvasPlus
                 Color color = ColorConfigHelper.ArgbStringToColor(textBox.Text.Trim());
                 SetColor(index, isLight, color);
             }
-            catch
+            catch (Exception ex)
             {
+                LogHelper.WriteLogToFile("HexTextBox: " + ex.Message, LogHelper.LogType.Trace);
                 textBox.Text = ColorConfigHelper.ColorToArgbString(isLight ? lightColors[index] : darkColors[index]);
             }
         }

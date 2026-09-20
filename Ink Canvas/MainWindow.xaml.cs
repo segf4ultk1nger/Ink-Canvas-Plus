@@ -1,5 +1,8 @@
 using AutoUpdaterDotNET;
+using InkCanvasPlus.Domain;
 using InkCanvasPlus.Helpers;
+using InkCanvasPlus.Input;
+using InkCanvasPlus.Services;
 using iNKORE.UI.WPF.Modern;
 using iNKORE.UI.WPF.Modern.Helpers;
 using IWshRuntimeLibrary;
@@ -65,6 +68,8 @@ namespace InkCanvasPlus
         public MainWindow()
         {
             InitializeComponent();
+            BorderSettings.Host = this;
+            _inkTools = new InkToolApplier(new MainWindowInkCanvasToolTarget(this));
 
             BorderSettings.Opacity = 0;
             BorderSettings.Visibility = Visibility.Collapsed;
@@ -83,14 +88,14 @@ namespace InkCanvasPlus
 
             if (!App.StartArgs.Contains("-o")) //-old ui
             {
-                GroupBoxAppearance.Visibility = Visibility.Collapsed;
+                BorderSettings.GroupBoxAppearance.Visibility = Visibility.Collapsed;
                 ViewBoxStackPanelMain.Visibility = Visibility.Collapsed;
                 ViewBoxStackPanelShapes.Visibility = Visibility.Collapsed;
                 HideSubPanels();
             }
             else
             {
-                GroupBoxAppearanceNewUI.Visibility = Visibility.Collapsed;
+                BorderSettings.GroupBoxAppearanceNewUI.Visibility = Visibility.Collapsed;
                 ViewboxFloatingBar.Visibility = Visibility.Collapsed;
                 GridForRecoverOldUI.Visibility = Visibility.Collapsed;
             }
@@ -98,9 +103,18 @@ namespace InkCanvasPlus
             if (File.Exists("debug.ini")) Label.Visibility = Visibility.Visible;
 
             InitTimers();
+            _inkHistory.IsEraseByPoint = () => inkCanvas.EditingMode == InkCanvasEditingMode.EraseByPoint;
+            _inkHistory.GetManipulationTargetCount = () =>
+            {
+                var selectedStrokes = inkCanvas.GetSelectedStrokes();
+                var count = selectedStrokes.Count;
+                if (count == 0) count = inkCanvas.Strokes.Count;
+                return count;
+            };
+            _inkHistory.CanAutoCommitManipulation = () => dec.Count == 0 && !isMouseDraggingStrokes;
             timeMachine.OnRedoStateChanged += TimeMachine_OnRedoStateChanged;
             timeMachine.OnUndoStateChanged += TimeMachine_OnUndoStateChanged;
-            inkCanvas.Strokes.StrokesChanged += StrokesOnStrokesChanged;
+            _inkHistory.Attach(inkCanvas.Strokes);
 
             Microsoft.Win32.SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
 
@@ -109,6 +123,7 @@ namespace InkCanvasPlus
             AutoUpdater.SetOwner(this);
             AutoUpdater.ApplicationExitEvent += () =>
             {
+                SettingsStore.FlushCurrentIfAny();
                 Environment.Exit(0);
             };
             CheckForUpdate();
@@ -149,20 +164,17 @@ namespace InkCanvasPlus
         private void UpdateWindowTitle()
         {
             string title = "Ink Canvas Plus - ";
-            if (currentMode == 0)
-            {
-                if (BtnPPTSlideShowEnd.Visibility == Visibility.Visible)
-                {
-                    title += "Presentation";
-                }
-                else
-                {
-                    title += "Desktop";
-                }
-            }
-            else if (currentMode == 1)
+            if (Surface == AppSurface.Whiteboard)
             {
                 title += "Board";
+            }
+            else if (Surface == AppSurface.PptShow || IsPptShowActive)
+            {
+                title += "Presentation";
+            }
+            else
+            {
+                title += "Desktop";
             }
             title += " ";
             if (Main_Grid.Background == Brushes.Transparent)
@@ -209,55 +221,60 @@ namespace InkCanvasPlus
 
         #region Timer
 
+        private readonly DispatcherGate _ui = new DispatcherGate();
+        private readonly ProcessWatchdog _processWatchdog = new ProcessWatchdog(
+            () => Settings.Automation.IsAutoKillPptService,
+            () => Settings.Automation.IsAutoKillEasiNote);
+        private CancellationTokenSource _backgroundCts = new CancellationTokenSource();
+        private DispatcherTimer _autoCollapseFloatBarTimer;
+        private DispatcherTimer _checkUpdateButtonTimer;
+        private DispatcherTimer _pptFloatBarMarginTimer;
+        private DispatcherTimer _notificationHideTimer;
+
         Timer timerCheckPPT = new Timer();
-        Timer timerKillProcess = new Timer();
 
         private void InitTimers()
         {
+            _pptSession.SlideShowBegan += PptSession_SlideShowBegan;
+            _pptSession.SlideChanged += PptSession_SlideChanged;
+            _pptSession.SlideShowEnded += PptSession_SlideShowEnded;
+            _pptSession.Detached += PptSession_Detached;
             timerCheckPPT.Elapsed += TimerCheckPPT_Elapsed;
             timerCheckPPT.Interval = 1000;
-
-            timerKillProcess.Elapsed += TimerKillProcess_Elapsed;
-            timerKillProcess.Interval = 1000;
         }
 
-        private void TimerKillProcess_Elapsed(object sender, ElapsedEventArgs e)
+        private void SyncProcessWatchdog()
+        {
+            if (Settings.Automation.IsAutoKillEasiNote || Settings.Automation.IsAutoKillPptService)
+            {
+                _processWatchdog.Start();
+            }
+            else
+            {
+                _processWatchdog.Stop();
+            }
+        }
+
+        private void CancelBackgroundWork()
         {
             try
             {
-                // 希沃相关： easinote swenserver RemoteProcess EasiNote.MediaHttpService smartnote.cloud EasiUpdate smartnote EasiUpdate3 EasiUpdate3Protect SeewoP2P CefSharp.BrowserSubprocess SeewoUploadService
-                string arg = "/F";
-                if (Settings.Automation.IsAutoKillPptService)
+                if (_backgroundCts != null && !_backgroundCts.IsCancellationRequested)
                 {
-                    Process[] processes = Process.GetProcessesByName("PPTService");
-                    if (processes.Length > 0)
-                    {
-                        arg += " /IM PPTService.exe";
-                    }
-                    processes = Process.GetProcessesByName("SeewoIwbAssistant");
-                    if (processes.Length > 0)
-                    {
-                        arg += " /IM SeewoIwbAssistant.exe" +
-                            " /IM Sia.Guard.exe";
-                    }
-                }
-                if (arg != "/F")
-                {
-                    Process p = new Process();
-                    p.StartInfo = new ProcessStartInfo("taskkill", arg);
-                    p.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
-                    p.Start();
-                }
-                if (Settings.Automation.IsAutoKillEasiNote)
-                {
-                    Process[] processes = Process.GetProcessesByName("EasiNote");
-                    if (processes.Length > 0)
-                    {
-                        AutoKillHelper.KillEasiNoteFloatBall();
-                    }
+                    _backgroundCts.Cancel();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.NewLog(ex);
+            }
+
+            _autoCollapseFloatBarTimer?.Stop();
+            _checkUpdateButtonTimer?.Stop();
+            _pptFloatBarMarginTimer?.Stop();
+            _notificationHideTimer?.Stop();
+            isStopInkReplay = true;
+            _processWatchdog?.Dispose();
         }
 
         #endregion Timer

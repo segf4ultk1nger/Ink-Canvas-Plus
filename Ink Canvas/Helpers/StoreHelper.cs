@@ -1,4 +1,6 @@
-﻿namespace InkCanvasPlus.Helpers
+﻿using System;
+
+namespace InkCanvasPlus.Helpers
 {
     public static class StoreHelper
     {
@@ -19,8 +21,9 @@
                     }
                     return false;
                 }
-                catch
+                catch (Exception ex)
                 {
+                    LogHelper.WriteLogToFile("StoreHelper.IsStoreApp: " + ex.Message, LogHelper.LogType.Trace);
                     return false;
                 }
             }

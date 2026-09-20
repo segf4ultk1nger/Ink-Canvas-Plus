@@ -1,11 +1,14 @@
 using AutoUpdaterDotNET;
+using InkCanvasPlus.Domain;
 using InkCanvasPlus.Helpers;
+using InkCanvasPlus.History;
+using InkCanvasPlus.Input;
+using InkCanvasPlus.Services;
 using iNKORE.UI.WPF.Modern;
 using iNKORE.UI.WPF.Modern.Helpers;
 using IWshRuntimeLibrary;
 using Microsoft.Office.Interop.PowerPoint;
 using Microsoft.Win32;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -55,10 +58,14 @@ namespace InkCanvasPlus
                 drawingAttributes.Height = 2.5;
                 drawingAttributes.Width = 2.5;
 
-                inkCanvas.EditingMode = InkCanvasEditingMode.Ink;
+                ApplyTool(InkTool.Pen);
                 inkCanvas.Gesture += InkCanvas_Gesture;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("loadPenCanvas", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
         }
         //ApplicationGesture lastApplicationGesture = ApplicationGesture.AllGestures;
         DateTime lastGestureTime = DateTime.Now;
@@ -83,7 +90,11 @@ namespace InkCanvasPlus
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("InkCanvas_Gesture", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
         }
 
         private void inkCanvas_EditingModeChanged(object sender, RoutedEventArgs e)
@@ -123,7 +134,7 @@ namespace InkCanvasPlus
 
         private void Window_MouseWheel(object sender, MouseWheelEventArgs e)
         {
-            if (StackPanelPPTControls.Visibility != Visibility.Visible || currentMode != 0) return;
+            if (StackPanelPPTControls.Visibility != Visibility.Visible || Surface == AppSurface.Whiteboard) return;
             if (e.Delta >= 120)
             {
                 BtnPPTSlidesUp_Click(BtnPPTSlidesUp, null);
@@ -136,7 +147,7 @@ namespace InkCanvasPlus
 
         private void Main_Grid_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (StackPanelPPTControls.Visibility != Visibility.Visible || currentMode != 0) return;
+            if (StackPanelPPTControls.Visibility != Visibility.Visible || Surface == AppSurface.Whiteboard) return;
 
             if (e.Key == Key.Down || e.Key == Key.PageDown || e.Key == Key.Right || e.Key == Key.N || e.Key == Key.Space)
             {
@@ -207,7 +218,7 @@ namespace InkCanvasPlus
             }
             else
             {
-                if (currentMode == 0)
+                if (Surface != AppSurface.Whiteboard)
                 {
                     BorderPenColorRed_MouseUp(null, null);
                 }
@@ -305,7 +316,7 @@ namespace InkCanvasPlus
 
         private void KeyToggleFloatBarPosition(object sender, ExecutedRoutedEventArgs e)
         {
-            ToggleSwitchFloatBarShowOnRight.IsOn = !ToggleSwitchFloatBarShowOnRight.IsOn;
+            BorderSettings.ToggleSwitchFloatBarShowOnRight.IsOn = !BorderSettings.ToggleSwitchFloatBarShowOnRight.IsOn;
         }
 
         private void KeyToggleMarker(object sender, ExecutedRoutedEventArgs e)
@@ -327,174 +338,38 @@ namespace InkCanvasPlus
 
         #region TimeMachine
 
-        private enum CommitReason
+        private readonly InkHistoryController _inkHistory = new InkHistoryController();
+
+        private TimeMachine timeMachine => _inkHistory.TimeMachine;
+
+        private CommitReason _currentCommitType
         {
-            UserInput,
-            CodeInput,
-            ShapeDrawing,
-            ShapeRecognition,
-            ClearingCanvas,
-            Manipulation
+            get { return _inkHistory.CurrentCommitType; }
+            set { _inkHistory.CurrentCommitType = value; }
         }
 
-        private CommitReason _currentCommitType = CommitReason.UserInput;
-        private bool IsEraseByPoint => inkCanvas.EditingMode == InkCanvasEditingMode.EraseByPoint;
-        private StrokeCollection ReplacedStroke;
-        private StrokeCollection AddedStroke;
         private StrokeCollection CuboidStrokeCollection;
-        private Dictionary<Stroke, Tuple<StylusPointCollection, StylusPointCollection>> StrokeManipulationHistory;
-        private Dictionary<Stroke, StylusPointCollection> StrokeInitialHistory = new Dictionary<Stroke, StylusPointCollection>();
-        private Dictionary<Stroke, Tuple<DrawingAttributes, DrawingAttributes>> DrawingAttributesHistory = new Dictionary<Stroke, Tuple<DrawingAttributes, DrawingAttributes>>();
-        private Dictionary<Guid, List<Stroke>> DrawingAttributesHistoryFlag = new Dictionary<Guid, List<Stroke>>()
+
+        private Dictionary<Stroke, Tuple<StylusPointCollection, StylusPointCollection>> StrokeManipulationHistory
         {
-            { DrawingAttributeIds.Color, new List<Stroke>() },
-            { DrawingAttributeIds.DrawingFlags, new List<Stroke>() },
-            { DrawingAttributeIds.IsHighlighter, new List<Stroke>() },
-            { DrawingAttributeIds.StylusHeight, new List<Stroke>() },
-            { DrawingAttributeIds.StylusTip, new List<Stroke>() },
-            { DrawingAttributeIds.StylusTipTransform, new List<Stroke>() },
-            { DrawingAttributeIds.StylusWidth, new List<Stroke>() }
-        };
-        private TimeMachine timeMachine = new TimeMachine();
+            get { return _inkHistory.StrokeManipulationHistory; }
+            set { _inkHistory.StrokeManipulationHistory = value; }
+        }
 
-        private void ApplyHistoryToCanvas(TimeMachineHistory item)
+        private Dictionary<Stroke, StylusPointCollection> StrokeInitialHistory
         {
-            _currentCommitType = CommitReason.CodeInput;
-            if (item.CommitType == TimeMachineHistoryType.UserInput)
-            {
-                if (!item.StrokeHasBeenCleared)
-                {
-                    foreach (var strokes in item.CurrentStroke)
-                    {
-                        if (!inkCanvas.Strokes.Contains(strokes))
-                            inkCanvas.Strokes.Add(strokes);
-                    }
-                }
-                else
-                {
-                    foreach (var strokes in item.CurrentStroke)
-                    {
-                        if (inkCanvas.Strokes.Contains(strokes))
-                            inkCanvas.Strokes.Remove(strokes);
-                    }
-                }
-            }
-            else if (item.CommitType == TimeMachineHistoryType.ShapeRecognition)
-            {
-                if (item.StrokeHasBeenCleared)
-                {
+            get { return _inkHistory.StrokeInitialHistory; }
+        }
 
-                    foreach (var strokes in item.CurrentStroke)
-                    {
-                        if (inkCanvas.Strokes.Contains(strokes))
-                            inkCanvas.Strokes.Remove(strokes);
-                    }
-                    foreach (var strokes in item.ReplacedStroke)
-                    {
-                        if (!inkCanvas.Strokes.Contains(strokes))
-                            inkCanvas.Strokes.Add(strokes);
-                    }
-                }
-                else
-                {
-                    foreach (var strokes in item.CurrentStroke)
-                    {
-                        if (!inkCanvas.Strokes.Contains(strokes))
-                            inkCanvas.Strokes.Add(strokes);
-                    }
-                    foreach (var strokes in item.ReplacedStroke)
-                    {
-                        if (inkCanvas.Strokes.Contains(strokes))
-                            inkCanvas.Strokes.Remove(strokes);
-                    }
-                }
-            }
-            else if (item.CommitType == TimeMachineHistoryType.Manipulation)
-            {
-                if (!item.StrokeHasBeenCleared)
-                {
-                    foreach (var currentStroke in item.StylusPointDictionary)
-                    {
-                        if (inkCanvas.Strokes.Contains(currentStroke.Key))
-                        {
-                            currentStroke.Key.StylusPoints = currentStroke.Value.Item2;
-                        }
-                    }
-                }
-                else
-                {
-                    foreach (var currentStroke in item.StylusPointDictionary)
-                    {
-                        if (inkCanvas.Strokes.Contains(currentStroke.Key))
-                        {
-                            currentStroke.Key.StylusPoints = currentStroke.Value.Item1;
-                        }
-                    }
-                }
-            }
-            else if (item.CommitType == TimeMachineHistoryType.DrawingAttributes)
-            {
-                if (!item.StrokeHasBeenCleared)
-                {
-                    foreach (var currentStroke in item.DrawingAttributes)
-                    {
-                        if (inkCanvas.Strokes.Contains(currentStroke.Key))
-                        {
-                            currentStroke.Key.DrawingAttributes = currentStroke.Value.Item2;
-                        }
-                    }
-                }
-                else
-                {
-                    foreach (var currentStroke in item.DrawingAttributes)
-                    {
-                        if (inkCanvas.Strokes.Contains(currentStroke.Key))
-                        {
-                            currentStroke.Key.DrawingAttributes = currentStroke.Value.Item1;
-                        }
-                    }
-                }
-            }
-            else if (item.CommitType == TimeMachineHistoryType.Clear)
-            {
-                if (!item.StrokeHasBeenCleared)
-                {
-                    if (item.CurrentStroke != null)
-                    {
-                        foreach (var currentStroke in item.CurrentStroke)
-                        {
-                            if (!inkCanvas.Strokes.Contains(currentStroke)) inkCanvas.Strokes.Add(currentStroke);
-                        }
+        private Dictionary<Stroke, Tuple<DrawingAttributes, DrawingAttributes>> DrawingAttributesHistory
+        {
+            get { return _inkHistory.DrawingAttributesHistory; }
+            set { _inkHistory.DrawingAttributesHistory = value; }
+        }
 
-                    }
-                    if (item.ReplacedStroke != null)
-                    {
-                        foreach (var replacedStroke in item.ReplacedStroke)
-                        {
-                            if (inkCanvas.Strokes.Contains(replacedStroke)) inkCanvas.Strokes.Remove(replacedStroke);
-                        }
-                    }
-
-                }
-                else
-                {
-                    if (item.ReplacedStroke != null)
-                    {
-                        foreach (var replacedStroke in item.ReplacedStroke)
-                        {
-                            if (!inkCanvas.Strokes.Contains(replacedStroke)) inkCanvas.Strokes.Add(replacedStroke);
-                        }
-                    }
-                    if (item.CurrentStroke != null)
-                    {
-                        foreach (var currentStroke in item.CurrentStroke)
-                        {
-                            if (inkCanvas.Strokes.Contains(currentStroke)) inkCanvas.Strokes.Remove(currentStroke);
-                        }
-                    }
-                }
-            }
-            _currentCommitType = CommitReason.UserInput;
+        private Dictionary<Guid, List<Stroke>> DrawingAttributesHistoryFlag
+        {
+            get { return _inkHistory.DrawingAttributesHistoryFlag; }
         }
 
         private void TimeMachine_OnUndoStateChanged(bool status)
@@ -510,140 +385,38 @@ namespace InkCanvasPlus
             BtnRedo.Visibility = result;
             BtnRedo.IsEnabled = status;
         }
-
-        private void StrokesOnStrokesChanged(object sender, StrokeCollectionChangedEventArgs e)
-        {
-            foreach (var stroke in e?.Removed)
-            {
-                stroke.StylusPointsChanged -= Stroke_StylusPointsChanged;
-                stroke.StylusPointsReplaced -= Stroke_StylusPointsReplaced;
-                stroke.DrawingAttributesChanged -= Stroke_DrawingAttributesChanged;
-                StrokeInitialHistory.Remove(stroke);
-            }
-            foreach (var stroke in e?.Added)
-            {
-                stroke.StylusPointsChanged += Stroke_StylusPointsChanged;
-                stroke.StylusPointsReplaced += Stroke_StylusPointsReplaced;
-                stroke.DrawingAttributesChanged += Stroke_DrawingAttributesChanged;
-                StrokeInitialHistory[stroke] = stroke.StylusPoints.Clone();
-            }
-            if (_currentCommitType == CommitReason.CodeInput || _currentCommitType == CommitReason.ShapeDrawing) return;
-            if ((e.Added.Count != 0 || e.Removed.Count != 0) && IsEraseByPoint)
-            {
-                if (AddedStroke == null) AddedStroke = new StrokeCollection();
-                if (ReplacedStroke == null) ReplacedStroke = new StrokeCollection();
-                AddedStroke.Add(e.Added);
-                ReplacedStroke.Add(e.Removed);
-                return;
-            }
-            if (e.Added.Count != 0)
-            {
-                if (_currentCommitType == CommitReason.ShapeRecognition)
-                {
-                    timeMachine.CommitStrokeShapeHistory(ReplacedStroke, e.Added);
-                    ReplacedStroke = null;
-                    return;
-                }
-                else
-                {
-                    timeMachine.CommitStrokeUserInputHistory(e.Added);
-                    return;
-                }
-            }
-
-            if (e.Removed.Count != 0)
-            {
-                if (_currentCommitType == CommitReason.ShapeRecognition)
-                {
-                    ReplacedStroke = e.Removed;
-                    return;
-                }
-                else if (!IsEraseByPoint || _currentCommitType == CommitReason.ClearingCanvas)
-                {
-                    timeMachine.CommitStrokeEraseHistory(e.Removed);
-                    return;
-                }
-            }
-        }
-
-        private void Stroke_DrawingAttributesChanged(object sender, PropertyDataChangedEventArgs e)
-        {
-            var key = sender as Stroke;
-            var currentValue = key.DrawingAttributes.Clone();
-            DrawingAttributesHistory.TryGetValue(key, out var previousTuple);
-            var previousValue = previousTuple?.Item1 ?? currentValue.Clone();
-            var needUpdateValue = !DrawingAttributesHistoryFlag[e.PropertyGuid].Contains(key);
-            if (needUpdateValue)
-            {
-                DrawingAttributesHistoryFlag[e.PropertyGuid].Add(key);
-                Debug.Write(e.PreviousValue.ToString());
-            }
-            if (e.PropertyGuid == DrawingAttributeIds.Color && needUpdateValue)
-            {
-                previousValue.Color = (Color)e.PreviousValue;
-            }
-            if (e.PropertyGuid == DrawingAttributeIds.IsHighlighter && needUpdateValue)
-            {
-                previousValue.IsHighlighter = (bool)e.PreviousValue;
-
-            }
-            if (e.PropertyGuid == DrawingAttributeIds.StylusHeight && needUpdateValue)
-            {
-                previousValue.Height = (double)e.PreviousValue;
-            }
-            if (e.PropertyGuid == DrawingAttributeIds.StylusWidth && needUpdateValue)
-            {
-                previousValue.Width = (double)e.PreviousValue;
-            }
-            if (e.PropertyGuid == DrawingAttributeIds.StylusTip && needUpdateValue)
-            {
-                previousValue.StylusTip = (StylusTip)e.PreviousValue;
-            }
-            if (e.PropertyGuid == DrawingAttributeIds.StylusTipTransform && needUpdateValue)
-            {
-                previousValue.StylusTipTransform = (Matrix)e.PreviousValue;
-            }
-            if (e.PropertyGuid == DrawingAttributeIds.DrawingFlags && needUpdateValue)
-            {
-                previousValue.IgnorePressure = (bool)e.PreviousValue;
-            }
-            DrawingAttributesHistory[key] = new Tuple<DrawingAttributes, DrawingAttributes>(previousValue, currentValue);
-        }
-
-        private void Stroke_StylusPointsReplaced(object sender, StylusPointsReplacedEventArgs e)
-        {
-            StrokeInitialHistory[sender as Stroke] = e.NewStylusPoints.Clone();
-        }
-
-        private void Stroke_StylusPointsChanged(object sender, EventArgs e)
-        {
-            var selectedStrokes = inkCanvas.GetSelectedStrokes();
-            var count = selectedStrokes.Count;
-            if (count == 0) count = inkCanvas.Strokes.Count;
-            if (StrokeManipulationHistory == null)
-            {
-                StrokeManipulationHistory = new Dictionary<Stroke, Tuple<StylusPointCollection, StylusPointCollection>>();
-            }
-            StrokeManipulationHistory[sender as Stroke] =
-                new Tuple<StylusPointCollection, StylusPointCollection>(StrokeInitialHistory[sender as Stroke], (sender as Stroke).StylusPoints.Clone());
-            if ((StrokeManipulationHistory.Count == count || sender == null) && dec.Count == 0 && !isMouseDraggingStrokes)
-            {
-                timeMachine.CommitStrokeManipulationHistory(StrokeManipulationHistory);
-                foreach (var item in StrokeManipulationHistory)
-                {
-                    StrokeInitialHistory[item.Key] = item.Value.Item2;
-                }
-                StrokeManipulationHistory = null;
-            }
-        }
         #endregion
 
         #region Definations and Loading
 
-        public static Settings Settings = new Settings();
+        private static readonly object SettingsStoreLock = new object();
+        private static SettingsStore _settingsStore;
+
+        internal static SettingsStore AppSettingsStore
+        {
+            get
+            {
+                if (_settingsStore != null) return _settingsStore;
+                lock (SettingsStoreLock)
+                {
+                    if (_settingsStore == null)
+                    {
+                        _settingsStore = new SettingsStore(App.RootPath, true);
+                    }
+                    return _settingsStore;
+                }
+            }
+        }
+
+        public static Settings Settings
+        {
+            get { return AppSettingsStore.Settings; }
+            set { AppSettingsStore.Settings = value; }
+        }
+
         public static string settingsFileName = "Settings.json";
         public static string positionFileName = "FloatBarPosition.txt";
-        bool isLoaded = false;
+        internal bool isLoaded = false;
         //bool isAutoUpdateEnabled = false;
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -658,10 +431,10 @@ namespace InkCanvasPlus
             LoadSettings();
             if (Environment.Is64BitProcess)
             {
-                GroupBoxInkRecognition.Visibility = Visibility.Collapsed;
+                BorderSettings.GroupBoxInkRecognition.Visibility = Visibility.Collapsed;
             }
 
-            TextBlockVersion.Text = Assembly.GetExecutingAssembly().GetName().Version.ToString();
+            BorderSettings.TextBlockVersion.Text = Assembly.GetExecutingAssembly().GetName().Version.ToString();
             LogHelper.WriteLogToFile("Ink Canvas Loaded", LogHelper.LogType.Event);
 
             PreloadIALibrary();
@@ -678,27 +451,27 @@ namespace InkCanvasPlus
 
             if (Settings.Appearance.IsAutoCollapseFloatBar)
             {
-                new Thread(new ThreadStart(() =>
+                _autoCollapseFloatBarTimer?.Stop();
+                _autoCollapseFloatBarTimer = _ui.RunOnce(TimeSpan.FromSeconds(3), () =>
                 {
-                    Thread.Sleep(3000);
-                    Application.Current.Dispatcher.Invoke(() =>
+                    if (Main_Grid.Background == Brushes.Transparent)
                     {
-                        if (Main_Grid.Background == Brushes.Transparent)
-                        {
-                            SetBorderFloatingBarMainControlsVisibility(false);
-                        }
-                    });
-                })).Start();
+                        SetBorderFloatingBarMainControlsVisibility(false);
+                    }
+                });
             }
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            SettingsStore.FlushCurrentIfAny();
             if (CloseIsFromButton)
             {
+                CancelBackgroundWork();
                 var helper = new WindowInteropHelper(this);
                 UnregisterHotKey(helper.Handle, HOTKEY_ID);
                 ComponentDispatcher.ThreadPreprocessMessage -= ComponentDispatcher_ThreadPreprocessMessage;
+                _pptSession.Dispose();
 
                 e.Cancel = false;
                 return;
@@ -733,11 +506,16 @@ namespace InkCanvasPlus
                     ViewboxFloatingBar.Margin = new Thickness(x, y, -2000, -200);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLogToFile("RestoreFloatBarPosition", LogHelper.LogType.Error);
+                LogHelper.NewLog(ex);
+            }
         }
 
         private void Window_Closed(object sender, EventArgs e)
         {
+            CancelBackgroundWork();
             LogHelper.WriteLogToFile("Ink Canvas closed", LogHelper.LogType.Event);
         }
 
@@ -760,24 +538,16 @@ namespace InkCanvasPlus
 
         private void LoadSettings(bool isStartup = true)
         {
-            if (File.Exists(App.RootPath + settingsFileName))
-            {
-                try
-                {
-                    string text = File.ReadAllText(App.RootPath + settingsFileName);
-                    Settings = JsonConvert.DeserializeObject<Settings>(text);
-                }
-                catch { }
-            }
+            AppSettingsStore.Load();
 
             if (Settings.Startup.IsAutoEnterModeFinger)
             {
                 ToggleSwitchModeFinger.IsOn = true;
-                ToggleSwitchAutoEnterModeFinger.IsOn = true;
+                BorderSettings.ToggleSwitchAutoEnterModeFinger.IsOn = true;
             }
             else
             {
-                ToggleSwitchAutoEnterModeFinger.IsOn = false;
+                BorderSettings.ToggleSwitchAutoEnterModeFinger.IsOn = false;
             }
             if (Settings.Startup.IsAutoHideCanvas)
             {
@@ -785,7 +555,7 @@ namespace InkCanvasPlus
                 {
                     BtnHideInkCanvas_Click(BtnHideInkCanvas, null);
                 }
-                ToggleSwitchAutoHideCanvas.IsOn = true;
+                BorderSettings.ToggleSwitchAutoHideCanvas.IsOn = true;
             }
             else
             {
@@ -794,67 +564,67 @@ namespace InkCanvasPlus
                     BtnHideInkCanvas_Click(BtnHideInkCanvas, null);
                     BtnHideInkCanvas_Click(BtnHideInkCanvas, null);
                 }
-                ToggleSwitchAutoHideCanvas.IsOn = false;
+                BorderSettings.ToggleSwitchAutoHideCanvas.IsOn = false;
             }
 
             if (Settings.Appearance.IsAutoCollapseFloatBar)
             {
-                ToggleSwitchAutoCollapseFloatBar.IsOn = true;
+                BorderSettings.ToggleSwitchAutoCollapseFloatBar.IsOn = true;
             }
             else
             {
-                ToggleSwitchAutoCollapseFloatBar.IsOn = false;
+                BorderSettings.ToggleSwitchAutoCollapseFloatBar.IsOn = false;
             }
             if (Settings.Appearance.IsFloatBarShowOnRight)
             {
-                ToggleSwitchFloatBarShowOnRight.IsOn = true;
+                BorderSettings.ToggleSwitchFloatBarShowOnRight.IsOn = true;
             }
             else
             {
-                ToggleSwitchFloatBarShowOnRight.IsOn = false;
+                BorderSettings.ToggleSwitchFloatBarShowOnRight.IsOn = false;
             }
             if (Settings.Appearance.IsRememberFloatBarPosition)
             {
-                ToggleSwitchRememberFloatBarPosition.IsOn = true;
+                BorderSettings.ToggleSwitchRememberFloatBarPosition.IsOn = true;
             }
             else
             {
-                ToggleSwitchRememberFloatBarPosition.IsOn = false;
+                BorderSettings.ToggleSwitchRememberFloatBarPosition.IsOn = false;
             }
             if (Settings.Appearance.IsShowEraserButton)
             {
                 BtnErase.Visibility = Visibility.Visible;
-                ToggleSwitchShowButtonEraser.IsOn = true;
+                BorderSettings.ToggleSwitchShowButtonEraser.IsOn = true;
             }
             else
             {
                 BtnErase.Visibility = Visibility.Collapsed;
-                ToggleSwitchShowButtonEraser.IsOn = false;
+                BorderSettings.ToggleSwitchShowButtonEraser.IsOn = false;
             }
             if (Settings.Appearance.IsShowExitButton)
             {
                 BtnExit.Visibility = Visibility.Visible;
-                ToggleSwitchShowButtonExit.IsOn = true;
+                BorderSettings.ToggleSwitchShowButtonExit.IsOn = true;
             }
             else
             {
                 BtnExit.Visibility = Visibility.Collapsed;
-                ToggleSwitchShowButtonExit.IsOn = false;
+                BorderSettings.ToggleSwitchShowButtonExit.IsOn = false;
             }
 
             ViewboxPPTSidesControl.Visibility =
                 Settings.PowerPointSettings.IsShowPPTNavigation ? Visibility.Visible : Visibility.Collapsed;
             ViewboxPPTRightBottom.Visibility =
                 Settings.PowerPointSettings.IsShowPPTNavigation ? Visibility.Visible : Visibility.Collapsed;
-            ToggleSwitchShowButtonPPTNavigation.IsOn = Settings.PowerPointSettings.IsShowPPTNavigation;
+            BorderSettings.ToggleSwitchShowButtonPPTNavigation.IsOn = Settings.PowerPointSettings.IsShowPPTNavigation;
 
             ViewboxPPTLeftCenter.Visibility =
                 Settings.PowerPointSettings.IsShowVerticalPPTNavigation ? Visibility.Visible : Visibility.Collapsed;
             ViewboxPPTRightCenter.Visibility =
                 Settings.PowerPointSettings.IsShowVerticalPPTNavigation ? Visibility.Visible : Visibility.Collapsed;
-            ToggleSwitchShowVerticalPPTNavigation.IsOn = Settings.PowerPointSettings.IsShowVerticalPPTNavigation;
+            BorderSettings.ToggleSwitchShowVerticalPPTNavigation.IsOn = Settings.PowerPointSettings.IsShowVerticalPPTNavigation;
 
-            ComboBoxTheme.SelectedIndex = Settings.Appearance.Theme;
+            BorderSettings.ComboBoxTheme.SelectedIndex = Settings.Appearance.Theme;
 
             if (Settings.Appearance.ViewboxFloatingBarScaleTransformValue != 0)
             {
@@ -862,38 +632,38 @@ namespace InkCanvasPlus
                 double clampedUserVal = userVal < 0.5 ? 0.5 : userVal > 1.0 ? 1.0 : userVal;
                 ViewboxFloatingBarScaleTransform.ScaleX = clampedUserVal;
                 ViewboxFloatingBarScaleTransform.ScaleY = clampedUserVal;
-                FloatingBarScaleSlider.Value = clampedUserVal * 100;
+                BorderSettings.FloatingBarScaleSlider.Value = clampedUserVal * 100;
             }
 
             if (Settings.Appearance.IsShowHideControlButton)
             {
                 BtnHideControl.Visibility = Visibility.Visible;
-                ToggleSwitchShowButtonHideControl.IsOn = true;
+                BorderSettings.ToggleSwitchShowButtonHideControl.IsOn = true;
             }
             else
             {
                 BtnHideControl.Visibility = Visibility.Collapsed;
-                ToggleSwitchShowButtonHideControl.IsOn = false;
+                BorderSettings.ToggleSwitchShowButtonHideControl.IsOn = false;
             }
             if (Settings.Appearance.IsShowLRSwitchButton)
             {
                 BtnSwitchSide.Visibility = Visibility.Visible;
-                ToggleSwitchShowButtonLRSwitch.IsOn = true;
+                BorderSettings.ToggleSwitchShowButtonLRSwitch.IsOn = true;
             }
             else
             {
                 BtnSwitchSide.Visibility = Visibility.Collapsed;
-                ToggleSwitchShowButtonLRSwitch.IsOn = false;
+                BorderSettings.ToggleSwitchShowButtonLRSwitch.IsOn = false;
             }
             if (Settings.Appearance.IsShowModeFingerToggleSwitch)
             {
                 StackPanelModeFinger.Visibility = Visibility.Visible;
-                ToggleSwitchShowButtonModeFinger.IsOn = true;
+                BorderSettings.ToggleSwitchShowButtonModeFinger.IsOn = true;
             }
             else
             {
                 StackPanelModeFinger.Visibility = Visibility.Collapsed;
-                ToggleSwitchShowButtonModeFinger.IsOn = false;
+                BorderSettings.ToggleSwitchShowButtonModeFinger.IsOn = false;
             }
             if (Settings.Appearance.IsTransparentButtonBackground)
             {
@@ -915,21 +685,21 @@ namespace InkCanvasPlus
 
             if (Settings.PowerPointSettings.PowerPointSupport)
             {
-                ToggleSwitchSupportPowerPoint.IsOn = true;
+                BorderSettings.ToggleSwitchSupportPowerPoint.IsOn = true;
                 timerCheckPPT.Start();
             }
             else
             {
-                ToggleSwitchSupportPowerPoint.IsOn = false;
+                BorderSettings.ToggleSwitchSupportPowerPoint.IsOn = false;
                 timerCheckPPT.Stop();
             }
             if (Settings.PowerPointSettings.IsShowCanvasAtNewSlideShow)
             {
-                ToggleSwitchShowCanvasAtNewSlideShow.IsOn = true;
+                BorderSettings.ToggleSwitchShowCanvasAtNewSlideShow.IsOn = true;
             }
             else
             {
-                ToggleSwitchShowCanvasAtNewSlideShow.IsOn = false;
+                BorderSettings.ToggleSwitchShowCanvasAtNewSlideShow.IsOn = false;
             }
 
             if (Settings.Gesture == null)
@@ -938,68 +708,68 @@ namespace InkCanvasPlus
             }
             if (Settings.Gesture.IsDisableLockSmithByDefault)
             {
-                ToggleSwitchDisableLockSmithByDefault.IsOn = true;
+                BorderSettings.ToggleSwitchDisableLockSmithByDefault.IsOn = true;
                 lockSmithDesktop = false;
                 ChangeLockSmithState(false);
             }
             else
             {
-                ToggleSwitchDisableLockSmithByDefault.IsOn = false;
+                BorderSettings.ToggleSwitchDisableLockSmithByDefault.IsOn = false;
                 lockSmithDesktop = true;
                 ChangeLockSmithState(true);
             }
             if (Settings.Gesture.IsEnableTwoFingerZoom)
             {
-                ToggleSwitchEnableTwoFingerZoom.IsOn = true;
+                BorderSettings.ToggleSwitchEnableTwoFingerZoom.IsOn = true;
             }
             else
             {
-                ToggleSwitchEnableTwoFingerZoom.IsOn = false;
+                BorderSettings.ToggleSwitchEnableTwoFingerZoom.IsOn = false;
             }
             if (Settings.Gesture.IsEnableTwoFingerTranslate)
             {
-                ToggleSwitchEnableTwoFingerTranslate.IsOn = true;
+                BorderSettings.ToggleSwitchEnableTwoFingerTranslate.IsOn = true;
             }
             else
             {
-                ToggleSwitchEnableTwoFingerTranslate.IsOn = false;
+                BorderSettings.ToggleSwitchEnableTwoFingerTranslate.IsOn = false;
             }
             if (Settings.Gesture.IsEnableTwoFingerRotation)
             {
-                ToggleSwitchEnableTwoFingerRotation.IsOn = true;
+                BorderSettings.ToggleSwitchEnableTwoFingerRotation.IsOn = true;
             }
             else
             {
-                ToggleSwitchEnableTwoFingerRotation.IsOn = false;
+                BorderSettings.ToggleSwitchEnableTwoFingerRotation.IsOn = false;
             }
             if (Settings.Gesture.IsEnableTwoFingerRotationOnSelection)
             {
-                ToggleSwitchEnableTwoFingerRotationOnSelection.IsOn = true;
+                BorderSettings.ToggleSwitchEnableTwoFingerRotationOnSelection.IsOn = true;
             }
             else
             {
-                ToggleSwitchEnableTwoFingerRotationOnSelection.IsOn = false;
+                BorderSettings.ToggleSwitchEnableTwoFingerRotationOnSelection.IsOn = false;
             }
             if (Settings.PowerPointSettings.IsEnableTwoFingerGestureInPresentationMode)
             {
-                ToggleSwitchEnableTwoFingerGestureInPresentationMode.IsOn = true;
+                BorderSettings.ToggleSwitchEnableTwoFingerGestureInPresentationMode.IsOn = true;
             }
             else
             {
-                ToggleSwitchEnableTwoFingerGestureInPresentationMode.IsOn = false;
+                BorderSettings.ToggleSwitchEnableTwoFingerGestureInPresentationMode.IsOn = false;
             }
             if (Settings.PowerPointSettings.IsEnableFingerGestureSlideShowControl)
             {
-                ToggleSwitchEnableFingerGestureSlideShowControl.IsOn = true;
+                BorderSettings.ToggleSwitchEnableFingerGestureSlideShowControl.IsOn = true;
             }
             else
             {
-                ToggleSwitchEnableFingerGestureSlideShowControl.IsOn = false;
+                BorderSettings.ToggleSwitchEnableFingerGestureSlideShowControl.IsOn = false;
             }
 
             if (File.Exists(Environment.GetFolderPath(Environment.SpecialFolder.Startup) + "\\InkCanvas" + ".lnk"))
             {
-                ToggleSwitchRunAtStartup.IsOn = true;
+                BorderSettings.ToggleSwitchRunAtStartup.IsOn = true;
             }
 
             if (Settings.Canvas != null)
@@ -1007,24 +777,24 @@ namespace InkCanvasPlus
                 drawingAttributes.Height = Settings.Canvas.InkWidth;
                 drawingAttributes.Width = Settings.Canvas.InkWidth;
 
-                InkWidthSlider.Value = Settings.Canvas.InkWidth * 2;
+                BorderSettings.InkWidthSlider.Value = Settings.Canvas.InkWidth * 2;
 
                 if (Settings.Canvas.IsShowCursor)
                 {
-                    ToggleSwitchShowCursor.IsOn = true;
+                    BorderSettings.ToggleSwitchShowCursor.IsOn = true;
                     inkCanvas.ForceCursor = true;
                 }
                 else
                 {
-                    ToggleSwitchShowCursor.IsOn = false;
+                    BorderSettings.ToggleSwitchShowCursor.IsOn = false;
                     inkCanvas.ForceCursor = false;
                 }
 
-                ComboBoxPenStyle.SelectedIndex = Settings.Canvas.InkStyle;
+                BorderSettings.ComboBoxPenStyle.SelectedIndex = Settings.Canvas.InkStyle;
 
-                ComboBoxEraserSize.SelectedIndex = Settings.Canvas.EraserSize + 2;
+                BorderSettings.ComboBoxEraserSize.SelectedIndex = Settings.Canvas.EraserSize + 2;
 
-                ComboBoxHyperbolaAsymptoteOption.SelectedIndex = (int)Settings.Canvas.HyperbolaAsymptoteOption;
+                BorderSettings.ComboBoxHyperbolaAsymptoteOption.SelectedIndex = (int)Settings.Canvas.HyperbolaAsymptoteOption;
             }
             else
             {
@@ -1033,144 +803,137 @@ namespace InkCanvasPlus
 
             if (Settings.Automation != null)
             {
-                if (Settings.Automation.IsAutoKillEasiNote || Settings.Automation.IsAutoKillPptService)
-                {
-                    timerKillProcess.Start();
-                }
-                else
-                {
-                    timerKillProcess.Stop();
-                }
+                SyncProcessWatchdog();
 
                 if (Settings.Automation.IsAutoKillEasiNote)
                 {
-                    ToggleSwitchAutoKillEasiNote.IsOn = true;
+                    BorderSettings.ToggleSwitchAutoKillEasiNote.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchAutoKillEasiNote.IsOn = false;
+                    BorderSettings.ToggleSwitchAutoKillEasiNote.IsOn = false;
                 }
 
                 if (Settings.Automation.IsAutoClearWhenExitingWritingMode)
                 {
-                    ToggleSwitchClearExitingWritingMode.IsOn = true;
+                    BorderSettings.ToggleSwitchClearExitingWritingMode.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchClearExitingWritingMode.IsOn = false;
+                    BorderSettings.ToggleSwitchClearExitingWritingMode.IsOn = false;
                 }
 
 
                 if (Settings.Automation.IsAutoSaveStrokesAtClear)
                 {
-                    ToggleSwitchAutoSaveStrokesAtClear.IsOn = true;
+                    BorderSettings.ToggleSwitchAutoSaveStrokesAtClear.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchAutoSaveStrokesAtClear.IsOn = false;
+                    BorderSettings.ToggleSwitchAutoSaveStrokesAtClear.IsOn = false;
                 }
 
 
 
                 if (Settings.Automation.IsAutoKillPptService)
                 {
-                    ToggleSwitchAutoKillPptService.IsOn = true;
+                    BorderSettings.ToggleSwitchAutoKillPptService.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchAutoKillPptService.IsOn = false;
+                    BorderSettings.ToggleSwitchAutoKillPptService.IsOn = false;
                 }
 
                 if (Settings.Automation.IsSaveScreenshotsInDateFolders)
                 {
-                    ToggleSwitchSaveScreenshotsInDateFolders.IsOn = true;
+                    BorderSettings.ToggleSwitchSaveScreenshotsInDateFolders.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchSaveScreenshotsInDateFolders.IsOn = false;
+                    BorderSettings.ToggleSwitchSaveScreenshotsInDateFolders.IsOn = false;
                 }
 
                 if (Settings.Automation.IsAutoSaveStrokesAtScreenshot)
                 {
-                    ToggleSwitchAutoSaveStrokesAtScreenshot.IsOn = true;
+                    BorderSettings.ToggleSwitchAutoSaveStrokesAtScreenshot.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchAutoSaveStrokesAtScreenshot.IsOn = false;
+                    BorderSettings.ToggleSwitchAutoSaveStrokesAtScreenshot.IsOn = false;
                 }
 
                 if (Settings.PowerPointSettings.IsAutoSaveStrokesInPowerPoint)
                 {
-                    ToggleSwitchAutoSaveStrokesInPowerPoint.IsOn = true;
+                    BorderSettings.ToggleSwitchAutoSaveStrokesInPowerPoint.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchAutoSaveStrokesInPowerPoint.IsOn = false;
+                    BorderSettings.ToggleSwitchAutoSaveStrokesInPowerPoint.IsOn = false;
                 }
 
                 if (Settings.PowerPointSettings.IsNotifyPreviousPage)
                 {
-                    ToggleSwitchNotifyPreviousPage.IsOn = true;
+                    BorderSettings.ToggleSwitchNotifyPreviousPage.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchNotifyPreviousPage.IsOn = false;
+                    BorderSettings.ToggleSwitchNotifyPreviousPage.IsOn = false;
                 }
 
                 if (Settings.PowerPointSettings.IsNotifyHiddenPage)
                 {
-                    ToggleSwitchNotifyHiddenPage.IsOn = true;
+                    BorderSettings.ToggleSwitchNotifyHiddenPage.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchNotifyHiddenPage.IsOn = false;
+                    BorderSettings.ToggleSwitchNotifyHiddenPage.IsOn = false;
                 }
 
                 if (Settings.PowerPointSettings.IsNoClearStrokeOnSelectWhenInPowerPoint)
                 {
-                    ToggleSwitchNoStrokeClearInPowerPoint.IsOn = true;
+                    BorderSettings.ToggleSwitchNoStrokeClearInPowerPoint.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchNoStrokeClearInPowerPoint.IsOn = false;
+                    BorderSettings.ToggleSwitchNoStrokeClearInPowerPoint.IsOn = false;
                 }
 
                 if (Settings.PowerPointSettings.IsShowStrokeOnSelectInPowerPoint)
                 {
-                    ToggleSwitchShowStrokeOnSelectInPowerPoint.IsOn = true;
+                    BorderSettings.ToggleSwitchShowStrokeOnSelectInPowerPoint.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchShowStrokeOnSelectInPowerPoint.IsOn = false;
+                    BorderSettings.ToggleSwitchShowStrokeOnSelectInPowerPoint.IsOn = false;
                 }
 
                 if (Settings.PowerPointSettings.IsSupportWPS)
                 {
-                    ToggleSwitchSupportWPS.IsOn = true;
+                    BorderSettings.ToggleSwitchSupportWPS.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchSupportWPS.IsOn = false;
+                    BorderSettings.ToggleSwitchSupportWPS.IsOn = false;
                 }
 
-                SideControlMinimumAutomationSlider.Value = Settings.Automation.MinimumAutomationStrokeNumber;
+                BorderSettings.SideControlMinimumAutomationSlider.Value = Settings.Automation.MinimumAutomationStrokeNumber;
 
                 if (Settings.Canvas.HideStrokeWhenSelecting)
                 {
-                    ToggleSwitchHideStrokeWhenSelecting.IsOn = true;
+                    BorderSettings.ToggleSwitchHideStrokeWhenSelecting.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchHideStrokeWhenSelecting.IsOn = false;
+                    BorderSettings.ToggleSwitchHideStrokeWhenSelecting.IsOn = false;
                 }
 
                 if (Settings.Canvas.UsingWhiteboard)
                 {
-                    ToggleSwitchUsingWhiteboard.IsOn = true;
+                    BorderSettings.ToggleSwitchUsingWhiteboard.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchUsingWhiteboard.IsOn = false;
+                    BorderSettings.ToggleSwitchUsingWhiteboard.IsOn = false;
                 }
                 if (Settings.Canvas.UsingWhiteboard)
                 {
@@ -1188,15 +951,15 @@ namespace InkCanvasPlus
                         break;
                 }
 
-                ComboBoxEraserType.SelectedIndex = Settings.Canvas.EraserType;
+                BorderSettings.ComboBoxEraserType.SelectedIndex = Settings.Canvas.EraserType;
 
                 if (Settings.PowerPointSettings.IsAutoSaveScreenShotInPowerPoint)
                 {
-                    ToggleSwitchAutoSaveScreenShotInPowerPoint.IsOn = true;
+                    BorderSettings.ToggleSwitchAutoSaveScreenShotInPowerPoint.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchAutoSaveScreenShotInPowerPoint.IsOn = false;
+                    BorderSettings.ToggleSwitchAutoSaveScreenShotInPowerPoint.IsOn = false;
                 }
             }
             else
@@ -1206,39 +969,39 @@ namespace InkCanvasPlus
 
             if (Settings.Advanced != null)
             {
-                TouchMultiplierSlider.Value = Settings.Advanced.TouchMultiplier;
+                BorderSettings.TouchMultiplierSlider.Value = Settings.Advanced.TouchMultiplier;
                 if (Settings.Advanced.IsLogEnabled)
                 {
-                    ToggleSwitchIsLogEnabled.IsOn = true;
+                    BorderSettings.ToggleSwitchIsLogEnabled.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchIsLogEnabled.IsOn = false;
+                    BorderSettings.ToggleSwitchIsLogEnabled.IsOn = false;
                 }
                 if (Settings.Advanced.EraserBindTouchMultiplier)
                 {
-                    ToggleSwitchEraserBindTouchMultiplier.IsOn = true;
+                    BorderSettings.ToggleSwitchEraserBindTouchMultiplier.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchEraserBindTouchMultiplier.IsOn = false;
+                    BorderSettings.ToggleSwitchEraserBindTouchMultiplier.IsOn = false;
                 }
 
                 if (Settings.Advanced.IsSpecialScreen)
                 {
-                    ToggleSwitchIsSpecialScreen.IsOn = true;
+                    BorderSettings.ToggleSwitchIsSpecialScreen.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchIsSpecialScreen.IsOn = false;
+                    BorderSettings.ToggleSwitchIsSpecialScreen.IsOn = false;
                 }
 
-                ToggleSwitchDisableEdgeGesture.IsOn = Settings.Advanced.DisableEdgeGesture;
+                BorderSettings.ToggleSwitchDisableEdgeGesture.IsOn = Settings.Advanced.DisableEdgeGesture;
                 EdgeGesturesUtils.DisableEdgeGestures(new WindowInteropHelper(this).Handle,
                     Settings.Advanced.DisableEdgeGesture && Main_Grid.Background != Brushes.Transparent);
-                TouchMultiplierSlider.Visibility = ToggleSwitchIsSpecialScreen.IsOn ? Visibility.Visible : Visibility.Collapsed;
+                BorderSettings.TouchMultiplierSlider.Visibility = BorderSettings.ToggleSwitchIsSpecialScreen.IsOn ? Visibility.Visible : Visibility.Collapsed;
 
-                ToggleSwitchIsQuadIR.IsOn = Settings.Advanced.IsQuadIR;
+                BorderSettings.ToggleSwitchIsQuadIR.IsOn = Settings.Advanced.IsQuadIR;
             }
             else
             {
@@ -1249,13 +1012,13 @@ namespace InkCanvasPlus
             {
                 if (Settings.InkToShape.IsInkToShapeEnabled)
                 {
-                    ToggleSwitchEnableInkToShape.IsOn = true;
+                    BorderSettings.ToggleSwitchEnableInkToShape.IsOn = true;
                 }
                 else
                 {
-                    ToggleSwitchEnableInkToShape.IsOn = false;
+                    BorderSettings.ToggleSwitchEnableInkToShape.IsOn = false;
                 }
-                LineNormalizationThresholdSlider.Value = Settings.InkToShape.LineNormalizationThreshold;
+                BorderSettings.LineNormalizationThresholdSlider.Value = Settings.InkToShape.LineNormalizationThreshold;
             }
             else
             {
@@ -1277,46 +1040,47 @@ namespace InkCanvasPlus
 
         public static bool CloseIsFromButton = false;
 
-        private void BtnLearnMore_Click(object sender, RoutedEventArgs e)
+        internal void BtnLearnMore_Click(object sender, RoutedEventArgs e)
         {
             new WelcomeWindow { Owner = this }.Show();
         }
 
-        private void BtnCheckForUpdate_Click(object sender, RoutedEventArgs e)
+        internal void BtnCheckForUpdate_Click(object sender, RoutedEventArgs e)
         {
-            BtnCheckForUpdate.IsEnabled = false;
+            BorderSettings.BtnCheckForUpdate.IsEnabled = false;
             AutoUpdater.Mandatory = true;
             AutoUpdater.ReportErrors = true;
             CheckForUpdate();
-            CheckingUpdatesTip.Visibility = Visibility.Visible;
-            AssemblyVersionInfoPanel.Visibility = Visibility.Collapsed;
-            new Thread(new ThreadStart(() =>
+            BorderSettings.CheckingUpdatesTip.Visibility = Visibility.Visible;
+            BorderSettings.AssemblyVersionInfoPanel.Visibility = Visibility.Collapsed;
+            _checkUpdateButtonTimer?.Stop();
+            _checkUpdateButtonTimer = _ui.RunOnce(TimeSpan.FromSeconds(5), () =>
             {
-                Thread.Sleep(5000);
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    CheckingUpdatesTip.Visibility = Visibility.Collapsed;
-                    AssemblyVersionInfoPanel.Visibility = Visibility.Visible;
-                    BtnCheckForUpdate.IsEnabled = true;
-                });
-            })).Start();
+                BorderSettings.CheckingUpdatesTip.Visibility = Visibility.Collapsed;
+                BorderSettings.AssemblyVersionInfoPanel.Visibility = Visibility.Visible;
+                BorderSettings.BtnCheckForUpdate.IsEnabled = true;
+            });
 
         }
-        private void BtnExit_Click(object sender, RoutedEventArgs e)
+        internal void BtnExit_Click(object sender, RoutedEventArgs e)
         {
             CloseIsFromButton = true;
+            SettingsStore.FlushCurrentIfAny();
             Close();
         }
 
-        private void BtnRestart_Click(object sender, RoutedEventArgs e)
+        internal void BtnRestart_Click(object sender, RoutedEventArgs e)
         {
             Process.Start(System.Windows.Forms.Application.ExecutablePath, "-m");
 
             CloseIsFromButton = true;
+            SettingsStore.FlushCurrentIfAny();
+            CancelBackgroundWork();
+            _pptSession.Dispose();
             Application.Current.Shutdown();
         }
 
-        private async void BtnSettings_Click(object sender, RoutedEventArgs e)
+        internal async void BtnSettings_Click(object sender, RoutedEventArgs e)
         {
             if (BorderSettings.Tag as Visibility? == Visibility.Visible)
             {
@@ -1346,7 +1110,6 @@ namespace InkCanvasPlus
 
         private void BtnErase_Click(object sender, RoutedEventArgs e)
         {
-            forceEraser = true;
             forcePointEraser = !forcePointEraser;
             switch (Settings.Canvas.EraserType)
             {
@@ -1357,10 +1120,10 @@ namespace InkCanvasPlus
                     forcePointEraser = false;
                     break;
             }
-            inkCanvas.EraserShape = forcePointEraser ? new EllipseStylusShape(50 * GetEraserSizeCoefficient(), 50 * GetEraserSizeCoefficient()) : new EllipseStylusShape(5, 5);
-            inkCanvas.EditingMode =
-                forcePointEraser ? InkCanvasEditingMode.EraseByPoint : InkCanvasEditingMode.EraseByStroke;
-            drawingShapeMode = 0;
+            var eraserShape = forcePointEraser
+                ? new EllipseStylusShape(50 * GetEraserSizeCoefficient(), 50 * GetEraserSizeCoefficient())
+                : new EllipseStylusShape(5, 5);
+            ApplyTool(forcePointEraser ? InkTool.PointEraser : InkTool.StrokeEraser, eraserShape: eraserShape);
             GeometryDrawingEraser.Brush = forcePointEraser
                 ? new SolidColorBrush(Color.FromRgb(0x23, 0xA9, 0xF2))
                 : new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
@@ -1374,7 +1137,7 @@ namespace InkCanvasPlus
             forceEraser = false;
             BorderClearInDelete.Visibility = Visibility.Collapsed;
 
-            if (currentMode == 0)
+            if (Surface != AppSurface.Whiteboard)
             {
                 BorderPenColorRed_MouseUp(BorderPenColorRed, null);
             }
@@ -1388,16 +1151,6 @@ namespace InkCanvasPlus
                 {
                     BorderPenColorWhite_MouseUp(BorderPenColorWhite, null);
                 }
-            }
-            if (inkCanvas.Strokes.Count != 0)
-            {
-                int whiteboardIndex = CurrentWhiteboardIndex;
-                if (currentMode == 0)
-                {
-                    whiteboardIndex = 0;
-                }
-                strokeCollections[whiteboardIndex] = inkCanvas.Strokes.Clone();
-
             }
 
             ClearStrokes(false);
@@ -1438,15 +1191,21 @@ namespace InkCanvasPlus
             }
         }
 
-        int currentMode = 0;
+        AppSurface Surface = AppSurface.Desktop;
+        bool IsPptShowActive { get; set; }
+
+        private void LeaveWhiteboardSurface()
+        {
+            Surface = IsPptShowActive ? AppSurface.PptShow : AppSurface.Desktop;
+        }
 
         private void BtnSwitch_Click(object sender, RoutedEventArgs e)
         {
             if (Main_Grid.Background == Brushes.Transparent)
             {
-                if (currentMode == 0)
+                if (Surface != AppSurface.Whiteboard)
                 {
-                    currentMode++;
+                    Surface = AppSurface.Whiteboard;
                     GridBackgroundCover.Visibility = Visibility.Collapsed;
 
                     SaveStrokes(true);
@@ -1481,10 +1240,10 @@ namespace InkCanvasPlus
             }
             else
             {
-                switch ((++currentMode) % 2)
+                switch (Surface == AppSurface.Whiteboard ? 0 : 1)
                 {
                     case 0: //屏幕模式
-                        currentMode = 0;
+                        LeaveWhiteboardSurface();
                         GridBackgroundCover.Visibility = Visibility.Collapsed;
 
                         SaveStrokes();
@@ -1519,7 +1278,7 @@ namespace InkCanvasPlus
                         Topmost = true;
                         break;
                     case 1: //黑板或白板模式
-                        currentMode = 1;
+                        Surface = AppSurface.Whiteboard;
                         GridBackgroundCover.Visibility = Visibility.Visible;
 
                         SaveStrokes(true);
@@ -1576,12 +1335,12 @@ namespace InkCanvasPlus
             SetColorByIndex();
             if (!Settings.Appearance.IsTransparentButtonBackground)
             {
-                ToggleSwitchTransparentButtonBackground_Toggled(ToggleSwitchTransparentButtonBackground, null);
+                ToggleSwitchTransparentButtonBackground_Toggled(BorderSettings.ToggleSwitchTransparentButtonBackground, null);
             }
         }
         private void SetColorByIndex(bool forced = false)
         {
-            if (forced || currentMode != 0 || GridInkCanvasSelectionCover.Visibility != Visibility.Collapsed)
+            if (forced || Surface == AppSurface.Whiteboard || GridInkCanvasSelectionCover.Visibility != Visibility.Collapsed)
                 if (inkColor == 0)
                 {
                     BtnColorBlack_Click(null, null);
@@ -1611,7 +1370,7 @@ namespace InkCanvasPlus
         int BoundsWidth = 5;
         private void ToggleSwitchModeFinger_Toggled(object sender, RoutedEventArgs e)
         {
-            ToggleSwitchAutoEnterModeFinger.IsOn = ToggleSwitchModeFinger.IsOn;
+            BorderSettings.ToggleSwitchAutoEnterModeFinger.IsOn = ToggleSwitchModeFinger.IsOn;
             if (ToggleSwitchModeFinger.IsOn)
             {
                 BoundsWidth = 15; //35
@@ -1675,7 +1434,7 @@ namespace InkCanvasPlus
 
                 // Auto-clear Strokes
                 // 很烦, 要重新来, 要等待截图完成再清理笔迹
-                if (BtnPPTSlideShowEnd.Visibility != Visibility.Visible)
+                if (!IsPptShowActive)
                 {
                     if (isLoaded && Settings.Automation.IsAutoClearWhenExitingWritingMode)
                     {
@@ -1743,7 +1502,7 @@ namespace InkCanvasPlus
 
 
                 GridBackgroundCoverHolder.Visibility = Visibility.Collapsed;
-                if (currentMode != 0)
+                if (Surface == AppSurface.Whiteboard)
                 {
                     SaveStrokes();
                     RestoreStrokes(true);
@@ -1850,9 +1609,9 @@ namespace InkCanvasPlus
             ImageEraser.Visibility = Visibility.Visible;
             if (Main_Grid.Background == Brushes.Transparent)
             {
-                if (currentMode == 1)
+                if (Surface == AppSurface.Whiteboard)
                 {
-                    currentMode = 0;
+                    LeaveWhiteboardSurface();
                     GridBackgroundCover.Visibility = Visibility.Collapsed;
                 }
                 BtnHideInkCanvas_Click(BtnHideInkCanvas, null);
@@ -1867,7 +1626,11 @@ namespace InkCanvasPlus
                     {
                         stroke.DrawingAttributes.Color = inkCanvas.DefaultDrawingAttributes.Color;
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        LogHelper.WriteLogToFile("ColorSwitchCheck", LogHelper.LogType.Error);
+                        LogHelper.NewLog(ex);
+                    }
                 }
             }
             if (DrawingAttributesHistory.Count > 0)
@@ -1881,11 +1644,8 @@ namespace InkCanvasPlus
             }
             else
             {
-                inkCanvas.IsManipulationEnabled = true;
-                drawingShapeMode = 0;
-                inkCanvas.EditingMode = InkCanvasEditingMode.Ink;
+                ApplyInkOrMarkerTool();
                 CancelSingleFingerDragMode();
-                forceEraser = false;
 
                 // 改变选中提示
                 ViewboxBtnColorBlackContent.BeginAnimation(OpacityProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(ColorSwiftOpacityDurationOff)));
